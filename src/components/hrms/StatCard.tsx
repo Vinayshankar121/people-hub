@@ -25,14 +25,14 @@ export function StatCard({
 }) {
   const c = COLOR_MAP[color];
   return (
-    <div className={`rounded-2xl ${c.bg} ring-1 ${c.ring} p-5 flex items-start gap-4`}>
-      <div className={`h-12 w-12 rounded-xl grid place-items-center ${c.icon}`}>
-        <Icon className="h-6 w-6" />
+    <div className={`rounded-2xl ${c.bg} ring-1 ${c.ring} p-3 sm:p-5 flex items-start gap-3 sm:gap-4`}>
+      <div className={`h-9 w-9 sm:h-12 sm:w-12 rounded-lg sm:rounded-xl grid place-items-center shrink-0 ${c.icon}`}>
+        <Icon className="h-4 w-4 sm:h-6 sm:w-6" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{title}</p>
-        <p className="text-2xl font-semibold text-slate-900 mt-1">{value}</p>
-        {subtext && <p className="text-xs text-slate-500 mt-1">{subtext}</p>}
+        <p className="text-[10px] sm:text-xs font-medium text-slate-500 uppercase tracking-wide truncate">{title}</p>
+        <p className="text-lg sm:text-2xl font-semibold text-slate-900 mt-0.5 sm:mt-1">{value}</p>
+        {subtext && <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1">{subtext}</p>}
       </div>
     </div>
   );

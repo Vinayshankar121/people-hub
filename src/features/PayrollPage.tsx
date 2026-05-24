@@ -102,7 +102,7 @@ function AdminPayroll() {
   return (
     <div className="space-y-8 max-w-7xl">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Payroll Processing</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Payroll Processing</h1>
         <p className="text-sm text-slate-500 mt-1">Generate monthly employee payroll and issue payslip PDFs.</p>
       </div>
 
@@ -203,7 +203,7 @@ function EmployeePayroll({ profile }: { profile: any }) {
   return (
     <div className="space-y-6 max-w-7xl">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Payroll Processing</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Payroll Processing</h1>
         <p className="text-sm text-slate-500 mt-1">Download and review your monthly payslips.</p>
       </div>
       <PayrollTable rows={history} showEmployee={false} employeeName={profile.name} employeeId={profile.employee_id} />

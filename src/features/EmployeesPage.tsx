@@ -154,10 +154,10 @@ export function EmployeesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Employee Directory</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Employee Directory</h1>
           <p className="text-sm text-slate-500 mt-1">Manage your organization's workforce</p>
         </div>
-        <button onClick={openAdd} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-white text-sm font-medium hover:opacity-90 transition">
+        <button onClick={openAdd} className="inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-brand text-white text-sm font-medium hover:opacity-90 transition shrink-0">
           <Plus className="h-4 w-4" /> Add Employee
         </button>
       </div>
@@ -171,7 +171,7 @@ export function EmployeesPage() {
             placeholder="Search by name, ID, or email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+            className="w-full pl-10 pr-4 py-2 sm:py-2.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
           />
         </div>
         <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="px-3 py-2.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">

@@ -61,7 +61,7 @@ function AdminLeaves() {
   return (
     <div className="space-y-6 max-w-7xl">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Leave Applications</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Leave Applications</h1>
         <p className="text-sm text-slate-500 mt-1">Review, approve, and manage staff leave requests.</p>
       </div>
 
@@ -191,7 +191,7 @@ function EmployeeLeaves({ profile }: { profile: any }) {
     <div className="space-y-6 max-w-7xl">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Leave Applications</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Leave Applications</h1>
           <p className="text-sm text-slate-500 mt-1">Submit leaves and review approvals.</p>
         </div>
         <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-white text-sm font-medium hover:opacity-90 transition">

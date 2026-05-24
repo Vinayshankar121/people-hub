@@ -160,7 +160,7 @@ export function CalendarPage() {
     <div className="space-y-6 max-w-7xl">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Interactive Calendar</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Interactive Calendar</h1>
           <p className="text-sm text-slate-500 mt-1">Unified view of holidays, leaves, and schedules.</p>
         </div>
         {isAdmin && (
@@ -172,7 +172,7 @@ export function CalendarPage() {
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-4">
+      <div className="flex flex-wrap gap-3 sm:gap-4">
         {[
           { label: "Holidays", color: EVENT_COLORS.Holiday, emoji: "🎉" },
           { label: "Approved Leaves", color: EVENT_COLORS.Leave, emoji: "🌴" },
@@ -186,7 +186,7 @@ export function CalendarPage() {
         ))}
       </div>
 
-      <div style={{ height: 650 }}>
+      <div className="h-[400px] sm:h-[500px] lg:h-[650px]">
         <BigCalendar
           localizer={localizer}
           events={events}

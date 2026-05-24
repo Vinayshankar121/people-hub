@@ -39,13 +39,13 @@ function AdminDashboard() {
   }, []);
 
   return (
-    <div className="space-y-8 max-w-7xl">
+    <div className="space-y-6 sm:space-y-8 max-w-7xl">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Admin Console</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Admin Console</h1>
         <p className="text-sm text-slate-500 mt-1">Company-wide operational overview</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <StatCard title="Total Employees" value={stats.total} icon={Users} color="blue" />
         <StatCard title="Present Today" value={stats.present} icon={UserCheck} color="emerald" />
         <StatCard title="Absent Today" value={stats.absent} icon={UserX} color="rose" />
@@ -130,13 +130,13 @@ function EmployeeDashboard() {
   }, [profile]);
 
   return (
-    <div className="space-y-8 max-w-7xl">
+    <div className="space-y-6 sm:space-y-8 max-w-7xl">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">My Workspace</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">My Workspace</h1>
         <p className="text-sm text-slate-500 mt-1">Your personal HR overview</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard title="Days Present" value={stats.present} icon={UserCheck} color="blue" subtext="This month" />
         <StatCard title="Days Absent" value={stats.absent} icon={UserX} color="rose" subtext="This month" />
         <StatCard title="Days on Leave" value={stats.leaves} icon={CalendarCheck} color="amber" subtext="This month" />

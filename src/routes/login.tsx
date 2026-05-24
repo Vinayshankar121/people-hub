@@ -26,15 +26,15 @@ function Login() {
   };
 
   return (
-    <div className="min-h-screen relative grid place-items-center bg-slate-950 overflow-hidden p-4">
-      <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-blue-600/30 blur-3xl animate-pulse" />
-      <div className="absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-indigo-600/30 blur-3xl animate-pulse" />
+    <div className="min-h-screen relative grid place-items-center bg-slate-950 overflow-hidden p-3 sm:p-4">
+      <div className="absolute -top-32 -left-32 h-64 w-64 sm:h-96 sm:w-96 rounded-full bg-blue-600/30 blur-3xl animate-pulse" />
+      <div className="absolute -bottom-32 -right-32 h-64 w-64 sm:h-96 sm:w-96 rounded-full bg-indigo-600/30 blur-3xl animate-pulse" />
 
-      <div className="relative w-full max-w-md rounded-2xl bg-slate-950/40 backdrop-blur-xl border border-white/10 p-8 shadow-2xl">
-        <div className="flex flex-col items-center text-center mb-6">
-          <img src="/logo.jpg" alt="Tech Minds" className="h-14 w-14 rounded-2xl object-cover mb-3" />
-          <h1 className="text-xl font-bold text-white tracking-wide">IT COMPANY HRMS</h1>
-          <p className="text-sm text-slate-400 mt-1">Secure Portal Sign In</p>
+      <div className="relative w-full max-w-md rounded-2xl bg-slate-950/40 backdrop-blur-xl border border-white/10 p-5 sm:p-8 shadow-2xl">
+        <div className="flex flex-col items-center text-center mb-5 sm:mb-6">
+          <img src="/logo.jpg" alt="Tech Minds" className="h-12 w-12 sm:h-14 sm:w-14 rounded-2xl object-cover mb-3" />
+          <h1 className="text-lg sm:text-xl font-bold text-white tracking-wide">IT COMPANY HRMS</h1>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">Secure Portal Sign In</p>
         </div>
 
         {err && (

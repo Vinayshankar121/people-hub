@@ -71,7 +71,7 @@ function AdminAttendance() {
   return (
     <div className="space-y-8 max-w-7xl">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Attendance Logs</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Attendance Logs</h1>
         <p className="text-sm text-slate-500 mt-1">Track check-ins, worked hours, and employee logs.</p>
       </div>
 
@@ -238,7 +238,7 @@ function EmployeeAttendance({ profile }: { profile: any }) {
   return (
     <div className="space-y-6 max-w-7xl">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Attendance Logs</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Attendance Logs</h1>
         <p className="text-sm text-slate-500 mt-1">Review your monthly attendance history and work log.</p>
       </div>
 

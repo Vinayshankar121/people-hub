@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Users, CalendarCheck, PlaneTakeoff, Wallet,
-  CalendarDays, Calendar as CalIcon, LogOut, Building2,
+  CalendarDays, Calendar as CalIcon, LogOut,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { initials } from "@/lib/hrms-utils";
@@ -24,9 +24,7 @@ export function Sidebar() {
   return (
     <aside className="w-[264px] shrink-0 bg-sidebar text-sidebar-foreground flex flex-col h-screen sticky top-0">
       <div className="px-6 py-6 flex items-center gap-3 border-b border-sidebar-border">
-        <div className="h-10 w-10 rounded-xl bg-brand grid place-items-center">
-          <Building2 className="h-5 w-5 text-white" />
-        </div>
+        <img src="/logo.jpg" alt="Tech Minds" className="h-10 w-10 rounded-xl object-cover" />
         <div>
           <p className="text-sm font-semibold leading-tight">Tech Minds</p>
           <p className="text-xs text-slate-400">IT Solutions HRMS</p>

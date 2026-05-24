@@ -113,6 +113,26 @@
 .rbc-event { border: none !important; padding: 2px 6px; font-size: 12px; }
 .rbc-today { background-color: color-mix(in oklab, var(--color-brand) 8%, white); }
 
+/* Form inputs */
+.input-field {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-border);
+  background: white;
+  font-size: 0.875rem;
+  color: var(--color-foreground);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-field:focus {
+  border-color: var(--color-brand);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-brand) 15%, transparent);
+}
+.input-field::placeholder {
+  color: var(--color-muted-foreground);
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: oklch(0.85 0.02 260); border-radius: 8px; }

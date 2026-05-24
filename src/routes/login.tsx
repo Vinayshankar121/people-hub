@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Building2, Mail, Lock, Eye, EyeOff, LogIn } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, LogIn } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 export const Route = createFileRoute("/login")({ component: Login });
@@ -32,9 +32,7 @@ function Login() {
 
       <div className="relative w-full max-w-md rounded-2xl bg-slate-950/40 backdrop-blur-xl border border-white/10 p-8 shadow-2xl">
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="h-14 w-14 rounded-2xl bg-brand grid place-items-center mb-3">
-            <Building2 className="h-7 w-7 text-white" />
-          </div>
+          <img src="/logo.jpg" alt="Tech Minds" className="h-14 w-14 rounded-2xl object-cover mb-3" />
           <h1 className="text-xl font-bold text-white tracking-wide">IT COMPANY HRMS</h1>
           <p className="text-sm text-slate-400 mt-1">Secure Portal Sign In</p>
         </div>

@@ -14,16 +14,331 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      attendance: {
+        Row: {
+          approval_status: string
+          approved_at: string | null
+          approved_by: string | null
+          check_in: string
+          check_out: string
+          created_at: string
+          date: string
+          edit_requested: boolean
+          id: string
+          original_punch_in: string
+          original_punch_out: string
+          punch_in_time: string
+          punch_out_time: string
+          remarks: string
+          status: string
+          total_hours: number
+          updated_at: string
+          user_auth_uid: string
+        }
+        Insert: {
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          check_in?: string
+          check_out?: string
+          created_at?: string
+          date: string
+          edit_requested?: boolean
+          id?: string
+          original_punch_in?: string
+          original_punch_out?: string
+          punch_in_time?: string
+          punch_out_time?: string
+          remarks?: string
+          status?: string
+          total_hours?: number
+          updated_at?: string
+          user_auth_uid: string
+        }
+        Update: {
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          check_in?: string
+          check_out?: string
+          created_at?: string
+          date?: string
+          edit_requested?: boolean
+          id?: string
+          original_punch_in?: string
+          original_punch_out?: string
+          punch_in_time?: string
+          punch_out_time?: string
+          remarks?: string
+          status?: string
+          total_hours?: number
+          updated_at?: string
+          user_auth_uid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["auth_uid"]
+          },
+          {
+            foreignKeyName: "attendance_user_auth_uid_fkey"
+            columns: ["user_auth_uid"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["auth_uid"]
+          },
+        ]
+      }
+      employees: {
+        Row: {
+          auth_uid: string | null
+          created_at: string
+          department: string
+          designation: string
+          email: string
+          employee_id: string
+          id: string
+          joiningDate: string | null
+          name: string
+          phone: string
+          profileImage: string
+          role: Database["public"]["Enums"]["app_role"]
+          salary: number
+          updated_at: string
+        }
+        Insert: {
+          auth_uid?: string | null
+          created_at?: string
+          department?: string
+          designation?: string
+          email: string
+          employee_id: string
+          id?: string
+          joiningDate?: string | null
+          name: string
+          phone?: string
+          profileImage?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          salary?: number
+          updated_at?: string
+        }
+        Update: {
+          auth_uid?: string | null
+          created_at?: string
+          department?: string
+          designation?: string
+          email?: string
+          employee_id?: string
+          id?: string
+          joiningDate?: string | null
+          name?: string
+          phone?: string
+          profileImage?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          salary?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      holidays: {
+        Row: {
+          created_at: string
+          date: string
+          id: string
+          name: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          id?: string
+          name: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          id?: string
+          name?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      leaves: {
+        Row: {
+          admin_comment: string
+          created_at: string
+          end_date: string
+          id: string
+          reason: string
+          start_date: string
+          status: string
+          type: string
+          updated_at: string
+          user_auth_uid: string
+        }
+        Insert: {
+          admin_comment?: string
+          created_at?: string
+          end_date: string
+          id?: string
+          reason: string
+          start_date: string
+          status?: string
+          type: string
+          updated_at?: string
+          user_auth_uid: string
+        }
+        Update: {
+          admin_comment?: string
+          created_at?: string
+          end_date?: string
+          id?: string
+          reason?: string
+          start_date?: string
+          status?: string
+          type?: string
+          updated_at?: string
+          user_auth_uid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leaves_user_auth_uid_fkey"
+            columns: ["user_auth_uid"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["auth_uid"]
+          },
+        ]
+      }
+      payroll: {
+        Row: {
+          absentDays: number
+          approvedLeaves: number
+          basicSalary: number
+          created_at: string
+          deductions: number
+          holidays: number
+          id: string
+          month: number
+          netSalary: number
+          presentDays: number
+          status: string
+          updated_at: string
+          user_auth_uid: string
+          workingDays: number
+          year: number
+        }
+        Insert: {
+          absentDays?: number
+          approvedLeaves?: number
+          basicSalary?: number
+          created_at?: string
+          deductions?: number
+          holidays?: number
+          id?: string
+          month: number
+          netSalary?: number
+          presentDays?: number
+          status?: string
+          updated_at?: string
+          user_auth_uid: string
+          workingDays?: number
+          year: number
+        }
+        Update: {
+          absentDays?: number
+          approvedLeaves?: number
+          basicSalary?: number
+          created_at?: string
+          deductions?: number
+          holidays?: number
+          id?: string
+          month?: number
+          netSalary?: number
+          presentDays?: number
+          status?: string
+          updated_at?: string
+          user_auth_uid?: string
+          workingDays?: number
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_user_auth_uid_fkey"
+            columns: ["user_auth_uid"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["auth_uid"]
+          },
+        ]
+      }
+      payslips: {
+        Row: {
+          created_at: string
+          id: string
+          payroll_id: string | null
+          pdf_path: string
+          pdfUrl: string | null
+          updated_at: string
+          user_auth_uid: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          payroll_id?: string | null
+          pdf_path?: string
+          pdfUrl?: string | null
+          updated_at?: string
+          user_auth_uid: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          payroll_id?: string | null
+          pdf_path?: string
+          pdfUrl?: string | null
+          updated_at?: string
+          user_auth_uid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payslips_payroll_id_fkey"
+            columns: ["payroll_id"]
+            isOneToOne: true
+            referencedRelation: "payroll"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payslips_user_auth_uid_fkey"
+            columns: ["user_auth_uid"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["auth_uid"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "Admin" | "Employee"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +465,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["Admin", "Employee"],
+    },
   },
 } as const

@@ -1,26 +1,26 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { useAuth } from "@/context/AuthContext";
+import { DashboardPage } from "@/features/DashboardPage";
 
-export const Route = createFileRoute("/")({
-  component: Index,
-});
-
-// IMPORTANT: Replace this placeholder. For sites with multiple pages (About, Services, Contact, etc.),
-// create separate route files (about.tsx, services.tsx, contact.tsx) — don't put all pages in this file.
-function PlaceholderIndex() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
-}
+export const Route = createFileRoute("/")({ component: Index });
 
 function Index() {
-  return <PlaceholderIndex />;
+  const { session, loading } = useAuth();
+  if (loading) return <div className="min-h-screen grid place-items-center text-sm text-muted-foreground">Loading…</div>;
+  if (!session) return <Navigate to="/login" />;
+  return <AppShell><DashboardPage /></AppShell>;
+}
+
+import { Sidebar } from "@/components/hrms/Sidebar";
+import { Navbar } from "@/components/hrms/Navbar";
+function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-screen bg-background">
+      <Sidebar />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Navbar />
+        <main className="flex-1 p-8">{children}</main>
+      </div>
+    </div>
+  );
 }

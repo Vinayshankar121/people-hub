@@ -35,6 +35,18 @@ const createEmployeeSchema = z.object({
   joiningDate: z.string().optional(),
   phone: z.string().max(50).default(""),
   role: z.enum(["Admin", "Employee"]).default("Employee"),
+
+  date_of_birth: z.string().optional(),
+  bank_name: z.string().max(200).default(""),
+  bank_account_no: z.string().max(100).default(""),
+  pan_no: z.string().max(20).default(""),
+  location: z.string().max(200).default(""),
+  pf_no: z.string().max(50).default(""),
+  universal_account_number: z.string().max(100).default(""),
+  original_hire_date: z.string().optional(),
+  total_days: z.number().min(0).default(0),
+  lop: z.number().min(0).default(0),
+  llop: z.number().min(0).default(0),
 });
 
 const updateEmployeeSchema = z.object({
@@ -47,6 +59,18 @@ const updateEmployeeSchema = z.object({
   role: z.enum(["Admin", "Employee"]),
   joiningDate: z.string().optional(),
   password: z.string().min(6).optional(),
+
+  date_of_birth: z.string().optional(),
+  bank_name: z.string().max(200).default(""),
+  bank_account_no: z.string().max(100).default(""),
+  pan_no: z.string().max(20).default(""),
+  location: z.string().max(200).default(""),
+  pf_no: z.string().max(50).default(""),
+  universal_account_number: z.string().max(100).default(""),
+  original_hire_date: z.string().optional(),
+  total_days: z.number().min(0).default(0),
+  lop: z.number().min(0).default(0),
+  llop: z.number().min(0).default(0),
 });
 
 const deleteEmployeeSchema = z.object({ auth_uid: z.string().uuid() });
@@ -87,6 +111,18 @@ export async function createEmployee({ data: raw }: { data: z.input<typeof creat
       salary: data.salary,
       phone: data.phone,
       joiningDate: data.joiningDate,
+
+      date_of_birth: data.date_of_birth,
+      bank_name: data.bank_name,
+      bank_account_no: data.bank_account_no,
+      pan_no: data.pan_no,
+      location: data.location,
+      pf_no: data.pf_no,
+      universal_account_number: data.universal_account_number,
+      original_hire_date: data.original_hire_date,
+      total_days: data.total_days,
+      lop: data.lop,
+      llop: data.llop,
     },
   });
   if (error) throw new Error(error.message);
@@ -103,6 +139,15 @@ export async function createEmployee({ data: raw }: { data: z.input<typeof creat
       phone: data.phone,
       role: data.role,
       joiningDate: data.joiningDate ?? new Date().toISOString(),
+
+      date_of_birth: data.date_of_birth || undefined,
+      bank_name: data.bank_name,
+      bank_account_no: data.bank_account_no,
+      pan_no: data.pan_no,
+      location: data.location,
+      pf_no: data.pf_no,
+      universal_account_number: data.universal_account_number,
+     
     })
     .eq("auth_uid", created.user!.id);
 
@@ -124,8 +169,14 @@ export async function updateEmployee({ data: raw }: { data: z.input<typeof updat
 
   const { auth_uid, password, ...patch } = data;
   if (password) await supabaseAdmin.auth.admin.updateUserById(auth_uid, { password });
-  await supabaseAdmin.from("employees").update(patch).eq("auth_uid", auth_uid);
-  return { success: true };
+
+  // Normalize optional date strings -> undefined so DB defaults apply
+  const normalized: any = { ...patch };
+  if (normalized.date_of_birth === "") normalized.date_of_birth = undefined;
+  if (normalized.original_hire_date === "") normalized.original_hire_date = undefined;
+  if (normalized.joiningDate === "") normalized.joiningDate = undefined;
+
+  await supabaseAdmin.from("employees").update(normalized).eq("auth_uid", auth_uid);
 }
 
 export async function approveLeave({ data: raw }: { data: z.input<typeof approveLeaveSchema> }) {
@@ -240,6 +291,8 @@ export async function generatePayroll({ data: raw }: { data: z.input<typeof payr
 
   const rows: any[] = [];
   for (const emp of emps ?? []) {
+    if (!emp.auth_uid) continue; // Skip employees without auth_uid
+    
     const { data: att } = await supabaseAdmin
       .from("attendance")
       .select("status")
@@ -249,24 +302,51 @@ export async function generatePayroll({ data: raw }: { data: z.input<typeof payr
     const present = (att ?? []).filter((a: any) => a.status === "Present").length;
     const leaves = (att ?? []).filter((a: any) => a.status === "Leave").length;
     const absent = Math.max(0, workingDays - present - leaves);
-    const perDay = Number(emp.salary) / workingDays;
+    
+    // Salary calculations
+    const monthlySalary = Number(emp.salary);
+    const yearlySalary = monthlySalary * 12;
+    const basicSalary = monthlySalary * 0.50;
+    const hra = monthlySalary * 0.30;
+    const otherAllowances = monthlySalary * 0.20;
+    const yearlyBasic = basicSalary * 12;
+    const yearlyHra = hra * 12;
+    const yearlyOtherAllowances = otherAllowances * 12;
+    
+    // Deductions and net salary
+    const perDay = monthlySalary / workingDays;
     const deductions = Math.round(perDay * absent * 100) / 100;
-    const net = Math.round((Number(emp.salary) - deductions) * 100) / 100;
+    const net = Math.round((monthlySalary - deductions) * 100) / 100;
+    
+    
     rows.push({
-      user_auth_uid: emp.auth_uid,
-      month,
-      year,
-      basicSalary: emp.salary,
-      workingDays,
-      presentDays: present,
-      absentDays: absent,
-      approvedLeaves: leaves,
-      holidays: holidayCount,
-      deductions,
-      netSalary: net,
-      status: "Paid",
-    });
+  user_auth_uid: emp.auth_uid,
+  month,
+  year,
+
+  "basicSalary": basicSalary,
+  "monthlySalary": monthlySalary,
+  "yearlySalary": yearlySalary,
+
+  hra,
+  other_allowances: otherAllowances,
+
+  yearly_basic: yearlyBasic,
+  yearly_hra: yearlyHra,
+  yearly_other_allowances: yearlyOtherAllowances,
+
+  "workingDays": workingDays,
+  "presentDays": present,
+  "absentDays": absent,
+  "approvedLeaves": leaves,
+
+  holidays: holidayCount,
+  deductions,
+  "netSalary": net,
+  status: "Paid",
+});
   }
+  
   if (rows.length) {
     await supabaseAdmin
       .from("payroll")
@@ -306,6 +386,8 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
 
   const preview: any[] = [];
   for (const emp of emps ?? []) {
+    if (!emp.auth_uid) continue; // Skip employees without auth_uid
+    
     const { data: att } = await supabaseAdmin
       .from("attendance")
       .select("status")
@@ -315,14 +397,34 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
     const present = (att ?? []).filter((a: any) => a.status === "Present").length;
     const leaves = (att ?? []).filter((a: any) => a.status === "Leave").length;
     const absent = Math.max(0, workingDays - present - leaves);
-    const perDay = Number(emp.salary) / workingDays;
+    
+    // Salary calculations
+    const monthlySalary = Number(emp.salary);
+    const yearlySalary = monthlySalary * 12;
+    const basicSalary = monthlySalary * 0.50;
+    const hra = monthlySalary * 0.30;
+    const otherAllowances = monthlySalary * 0.20;
+    const yearlyBasic = basicSalary * 12;
+    const yearlyHra = hra * 12;
+    const yearlyOtherAllowances = otherAllowances * 12;
+    
+    // Deductions and net salary
+    const perDay = monthlySalary / workingDays;
     const deductions = Math.round(perDay * absent * 100) / 100;
-    const net = Math.round((Number(emp.salary) - deductions) * 100) / 100;
+    const net = Math.round((monthlySalary - deductions) * 100) / 100;
+    
     preview.push({
       auth_uid: emp.auth_uid,
       name: emp.name,
       employee_id: emp.employee_id,
-      basicSalary: emp.salary,
+      basicSalary: basicSalary,
+      monthlySalary,
+      yearlySalary,
+      hra,
+      otherAllowances,
+      yearlyBasic,
+      yearlyHra,
+      yearlyOtherAllowances,
       workingDays,
       presentDays: present,
       approvedLeaves: leaves,

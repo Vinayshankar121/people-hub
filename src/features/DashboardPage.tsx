@@ -25,7 +25,7 @@ function AdminDashboard() {
       const { data: emps } = await supabase.from("employees").select("role").eq("role", "Employee");
       const { data: att } = await supabase.from("attendance").select("status").eq("date", today);
       const { data: lv } = await supabase.from("leaves").select("id").eq("status", "Pending");
-      const { data: pay } = await supabase.from("payroll").select("netSalary")
+      const { data: pay } = await supabase.from("payroll_with_employee_details").select("netSalary")
         .eq("month", now.getMonth() + 1).eq("year", now.getFullYear()).eq("status", "Paid");
       const total = emps?.length ?? 0;
       const present = (att ?? []).filter((a) => a.status === "Present").length;

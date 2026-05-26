@@ -39,6 +39,9 @@ function AdminAttendance() {
   const [pending, setPending] = useState<AttRow[]>([]);
   const [employees, setEmployees] = useState<{ auth_uid: string; name: string; employee_id: string }[]>([]);
   const [empFilter, setEmpFilter] = useState("All");
+  const [editRow, setEditRow] = useState<AttRow | null>(null);
+  const [editForm, setEditForm] = useState({ punch_in: "", punch_out: "", status: "" });
+  const [saving, setSaving] = useState(false);
 
   const loadAll = async () => {
     const { data: emps } = await supabase.from("employees").select("auth_uid, name, employee_id");
@@ -65,6 +68,34 @@ function AdminAttendance() {
       loadAll();
     } catch (err: any) {
       toast.error(err.message);
+    }
+  };
+
+  const openEdit = (row: AttRow) => {
+    setEditRow(row);
+    setEditForm({ punch_in: row.punch_in_time || "", punch_out: row.punch_out_time || "", status: row.status || "Present" });
+  };
+
+  const submitEdit = async () => {
+    if (!editRow) return;
+    setSaving(true);
+    try {
+      const hours = calcHours(editForm.punch_in, editForm.punch_out);
+      await supabase.from("attendance").update({
+        punch_in_time: editForm.punch_in || null,
+        punch_out_time: editForm.punch_out || null,
+        total_hours: hours,
+        status: editForm.status,
+        edit_requested: false,
+        approval_status: "Approved",
+      }).eq("id", editRow.id);
+      toast.success("Attendance updated successfully");
+      setEditRow(null);
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -96,6 +127,7 @@ function AdminAttendance() {
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Check Out</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Hours Worked</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Status</th>
+                <th className="text-left px-5 py-3 font-medium text-slate-500">Edit</th>
               </tr>
             </thead>
             <tbody>
@@ -115,10 +147,15 @@ function AdminAttendance() {
                   <td className="px-5 py-3 font-mono text-xs">{r.punch_out_time || "—"}</td>
                   <td className="px-5 py-3 text-slate-700">{r.total_hours ? `${r.total_hours}h` : "—"}</td>
                   <td className="px-5 py-3"><Badge status={r.status} /></td>
+                  <td className="px-5 py-3">
+                    <button onClick={() => openEdit(r)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand transition">
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  </td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={6} className="text-center py-12 text-slate-500"><CalendarCheck className="h-10 w-10 mx-auto text-slate-300 mb-2" />No attendance records for this date</td></tr>
+                <tr><td colSpan={7} className="text-center py-12 text-slate-500"><CalendarCheck className="h-10 w-10 mx-auto text-slate-300 mb-2" />No attendance records for this date</td></tr>
               )}
             </tbody>
           </table>
@@ -172,6 +209,41 @@ function AdminAttendance() {
           </div>
         </div>
       )}
+
+      {/* Admin Edit Modal */}
+      <Modal open={!!editRow} title="Edit Attendance Record" onClose={() => setEditRow(null)}>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-600">Date</label>
+            <input type="text" value={fmtDate(editRow?.date)} disabled className="input-field opacity-60" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-600">Punch In</label>
+              <input type="time" value={editForm.punch_in} onChange={(e) => setEditForm({ ...editForm, punch_in: e.target.value })} className="input-field" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-600">Punch Out</label>
+              <input type="time" value={editForm.punch_out} onChange={(e) => setEditForm({ ...editForm, punch_out: e.target.value })} className="input-field" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-600">Status</label>
+            <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} className="input-field">
+              <option value="Present">Present</option>
+              <option value="Absent">Absent</option>
+              <option value="Leave">Leave</option>
+              <option value="Holiday">Holiday</option>
+            </select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+          <button onClick={() => setEditRow(null)} className="px-4 py-2 rounded-xl text-sm text-slate-600 hover:bg-slate-100 transition">Cancel</button>
+          <button onClick={submitEdit} disabled={saving} className="px-5 py-2 rounded-xl bg-brand text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 transition">
+            {saving ? "Updating…" : "Update Attendance"}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -20,6 +20,15 @@ type Employee = {
   salary: number;
   phone: string;
   role: "Admin" | "Employee";
+
+  date_of_birth?: string | null;
+  bank_name?: string;
+  bank_account_no?: string;
+  pan_no?: string;
+  location?: string;
+  pf_no?: string;
+  universal_account_number?: string;
+  
 };
 
 const EMPTY_FORM = {
@@ -33,6 +42,15 @@ const EMPTY_FORM = {
   joiningDate: new Date().toISOString().slice(0, 10),
   phone: "",
   role: "Employee" as "Admin" | "Employee",
+
+  date_of_birth: null as string | null,
+  bank_name: "",
+  bank_account_no: "",
+  pan_no: "",
+  location: "",
+  pf_no: "",
+  universal_account_number: "",
+ 
 };
 
 export function EmployeesPage() {
@@ -48,9 +66,9 @@ export function EmployeesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const load = async () => {
+const load = async () => {
     const { data } = await supabase.from("employees").select("*").order("created_at", { ascending: true });
-    setEmployees((data as Employee[]) ?? []);
+setEmployees((data ?? []) as unknown as any);
   };
 
   useEffect(() => { load(); }, []);
@@ -71,9 +89,10 @@ export function EmployeesPage() {
     setShowModal(true);
   };
 
-  const openEdit = (emp: Employee) => {
+const openEdit = (emp: Employee) => {
     setEditTarget(emp);
     setForm({
+      ...EMPTY_FORM,
       employee_id: emp.employee_id,
       name: emp.name,
       email: emp.email,
@@ -84,6 +103,14 @@ export function EmployeesPage() {
       joiningDate: emp.joiningDate?.slice(0, 10) ?? "",
       phone: emp.phone,
       role: emp.role,
+
+      date_of_birth: emp.date_of_birth ?? null,
+      bank_name: emp.bank_name ?? "",
+      bank_account_no: emp.bank_account_no ?? "",
+      pan_no: emp.pan_no ?? "",
+      location: emp.location ?? "",
+      pf_no: emp.pf_no ?? "",
+      universal_account_number: emp.universal_account_number ?? "",
     });
     setShowModal(true);
   };
@@ -103,6 +130,15 @@ export function EmployeesPage() {
             role: form.role,
             joiningDate: form.joiningDate || undefined,
             password: form.password || undefined,
+
+            date_of_birth: form.date_of_birth || undefined,
+            pan_no: form.pan_no,
+            location: form.location,
+            pf_no: form.pf_no,
+
+            universal_account_number: form.universal_account_number,
+            bank_name: form.bank_name,
+            bank_account_no: form.bank_account_no,
           },
         });
         toast.success("Employee updated successfully");
@@ -119,6 +155,13 @@ export function EmployeesPage() {
             joiningDate: form.joiningDate || undefined,
             phone: form.phone,
             role: form.role,
+
+            date_of_birth: form.date_of_birth || undefined,
+            pan_no: form.pan_no,
+            pf_no: form.pf_no,
+            universal_account_number: form.universal_account_number,
+            bank_name: form.bank_name,
+            bank_account_no: form.bank_account_no,
           },
         });
         toast.success("Employee registered successfully");
@@ -196,7 +239,12 @@ export function EmployeesPage() {
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Department & Role</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Phone</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Salary</th>
-                <th className="text-left px-5 py-3 font-medium text-slate-500">Joining Date</th>
+                <th className="text-left px-5 py-3 font-medium text-slate-500">Date of Birth</th>
+                <th className="text-left px-5 py-3 font-medium text-slate-500">PAN</th>
+                <th className="text-left px-5 py-3 font-medium text-slate-500">PF No</th>
+                <th className="text-left px-5 py-3 font-medium text-slate-500">UAN</th>
+                <th className="text-left px-5 py-3 font-medium text-slate-500">Bank Name</th>
+                <th className="text-left px-5 py-3 font-medium text-slate-500">Bank Account #</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Actions</th>
               </tr>
             </thead>
@@ -224,7 +272,12 @@ export function EmployeesPage() {
                   </td>
                   <td className="px-5 py-3 text-slate-600">{emp.phone || "—"}</td>
                   <td className="px-5 py-3 font-medium text-slate-900">{fmtMoney(emp.salary)}</td>
-                  <td className="px-5 py-3 text-slate-600">{fmtDate(emp.joiningDate)}</td>
+                  <td className="px-5 py-3 text-slate-600">{fmtDate(emp.date_of_birth ?? null)}</td>
+                  <td className="px-5 py-3 text-slate-600">{emp.pan_no || "—"}</td>
+                  <td className="px-5 py-3 text-slate-600">{emp.pf_no || "—"}</td>
+                  <td className="px-5 py-3 text-slate-600">{emp.universal_account_number || "—"}</td>
+                  <td className="px-5 py-3 text-slate-600">{emp.bank_name || "—"}</td>
+                  <td className="px-5 py-3 text-slate-600">{emp.bank_account_no || "—"}</td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-1">
                       <button onClick={() => openEdit(emp)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand transition">
@@ -243,7 +296,7 @@ export function EmployeesPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-slate-500">
+                  <td colSpan={12} className="text-center py-12 text-slate-500">
                     <Users className="h-10 w-10 mx-auto text-slate-300 mb-2" />
                     No employees found
                   </td>
@@ -291,6 +344,28 @@ export function EmployeesPage() {
               <option value="Employee">Employee</option>
               <option value="Admin">Admin</option>
             </select>
+          </Field>
+
+          <Field label="Date of Birth">
+            <input type="date" value={form.date_of_birth ?? ""} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value || null })} className="input-field" />
+          </Field>
+          <Field label="PAN No">
+            <input value={form.pan_no ?? ""} onChange={(e) => setForm({ ...form, pan_no: e.target.value })} placeholder="ABCDE1234F" className="input-field" />
+          </Field>
+          <Field label="Location">
+            <input value={form.location ?? ""} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. Bangalore" className="input-field" />
+          </Field>
+          <Field label="PF No">
+            <input value={form.pf_no ?? ""} onChange={(e) => setForm({ ...form, pf_no: e.target.value })} placeholder="PF123456" className="input-field" />
+          </Field>
+          <Field label="UAN">
+            <input value={form.universal_account_number ?? ""} onChange={(e) => setForm({ ...form, universal_account_number: e.target.value })} placeholder="UAN123456789" className="input-field" />
+          </Field>
+          <Field label="Bank Name">
+            <input value={form.bank_name ?? ""} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} placeholder="SBI" className="input-field" />
+          </Field>
+          <Field label="Bank Account #">
+            <input value={form.bank_account_no ?? ""} onChange={(e) => setForm({ ...form, bank_account_no: e.target.value })} placeholder="1234567890" className="input-field" />
           </Field>
         </div>
         <div className="flex justify-end gap-3 mt-6 pt-4 border-t">

@@ -334,7 +334,7 @@ export function generatePayslipPDF(data: PayslipData, fileName?: string) {
   );
 
   doc.text(
-    "Tech Minds IT Solutions | Nellore, Andhra Pradesh",
+    "Tech Minds IT Solutions | Nellore, Andhra Pradesh -524002",
     pageWidth / 2,
     pageHeight - 8,
     { align: "center" }

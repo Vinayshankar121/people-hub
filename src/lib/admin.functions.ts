@@ -128,27 +128,28 @@ export async function createEmployee({ data: raw }: { data: z.input<typeof creat
   if (error) throw new Error(error.message);
 
   // trigger creates the employees row; ensure full update
+  const updatePayload: any = {
+    employee_id: data.employee_id,
+    name: data.name,
+    department: data.department,
+    designation: data.designation,
+    salary: data.salary,
+    phone: data.phone,
+    role: data.role,
+    joiningDate: data.joiningDate ?? new Date().toISOString(),
+
+    date_of_birth: data.date_of_birth || undefined,
+    bank_name: data.bank_name,
+    bank_account_no: data.bank_account_no,
+    pan_no: data.pan_no,
+    location: data.location,
+    pf_no: data.pf_no,
+    universal_account_number: data.universal_account_number,
+  };
+
   await supabaseAdmin
     .from("employees")
-    .update({
-      employee_id: data.employee_id,
-      name: data.name,
-      department: data.department,
-      designation: data.designation,
-      salary: data.salary,
-      phone: data.phone,
-      role: data.role,
-      joiningDate: data.joiningDate ?? new Date().toISOString(),
-
-      date_of_birth: data.date_of_birth || undefined,
-      bank_name: data.bank_name,
-      bank_account_no: data.bank_account_no,
-      pan_no: data.pan_no,
-      location: data.location,
-      pf_no: data.pf_no,
-      universal_account_number: data.universal_account_number,
-     
-    })
+    .update(updatePayload)
     .eq("auth_uid", created.user!.id);
 
   return { success: true };

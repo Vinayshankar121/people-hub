@@ -73,17 +73,23 @@ function AdminAttendance() {
 
   const openEdit = (row: AttRow) => {
     setEditRow(row);
-    setEditForm({ punch_in: row.punch_in_time || "", punch_out: row.punch_out_time || "", status: row.status || "Present" });
+    setEditForm({
+      punch_in: row.punch_in_time ?? "",
+      punch_out: row.punch_out_time ?? "",
+      status: row.status || "Present",
+    });
   };
 
   const submitEdit = async () => {
     if (!editRow) return;
     setSaving(true);
     try {
-      const hours = calcHours(editForm.punch_in, editForm.punch_out);
+      const punchIn = editForm.punch_in ? editForm.punch_in : undefined;
+      const punchOut = editForm.punch_out ? editForm.punch_out : undefined;
+      const hours = editForm.status === "Absent" ? 0 : calcHours(editForm.punch_in ?? "", editForm.punch_out ?? "");
       await supabase.from("attendance").update({
-        punch_in_time: editForm.punch_in || null,
-        punch_out_time: editForm.punch_out || null,
+        punch_in_time: punchIn,
+        punch_out_time: punchOut,
         total_hours: hours,
         status: editForm.status,
         edit_requested: false,
@@ -277,7 +283,11 @@ function EmployeeAttendance({ profile }: { profile: any }) {
       return;
     }
     setEditRow(row);
-    setEditForm({ punch_in: row.punch_in_time, punch_out: row.punch_out_time, remarks: "" });
+    setEditForm({
+      punch_in: row.punch_in_time ?? "",
+      punch_out: row.punch_out_time ?? "",
+      remarks: "",
+    });
   };
 
   const submitEdit = async () => {

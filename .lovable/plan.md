@@ -8,7 +8,7 @@ A full HRMS for Tech Minds IT Solutions with Admin/Employee roles. I'll adapt th
 - Vite + React → already present
 - TailwindCSS v3 → **Tailwind v4** (already wired via `src/styles.css`)
 - Supabase Auth + Postgres → **Lovable Cloud** (Supabase under the hood)
-- Edge Functions for payroll → **TanStack `createServerFn`** (admin-elevated)
+- Edge Functions for payrollpage → **TanStack `createServerFn`** (admin-elevated)
 - Axios-style `api.js` → typed server functions + browser Supabase client
 - `react-big-calendar` + `date-fns` + `lucide-react` → install as deps
 
@@ -20,13 +20,13 @@ A full HRMS for Tech Minds IT Solutions with Admin/Employee roles. I'll adapt th
 4. **Employees** (admin) — Table, search, dept/role filters, Add/Edit/Delete modals incl. password field
 5. **Attendance** — Admin (all logs by date + pending corrections approve/reject) / Employee (monthly history + 7-day edit window)
 6. **Leaves** — Admin approve/reject with comment / Employee submit + view history; auto-create Leave attendance on approval
-7. **Payroll** — Admin preview → lock & distribute; both can view history + download PDF payslip
+7. **Payrollpage** — Admin preview → lock & distribute; both can view history + download PDF payslip
 8. **Holidays** — Admin CRUD, Employee view-only, card grid
 9. **Calendar** — `react-big-calendar` month view with color-coded events, admin can filter by employee
 
 ## Database (Lovable Cloud)
 
-Create all 6 tables exactly as specified in §5: `employees`, `holidays`, `attendance`, `leaves`, `payroll`, `payslips`. Add `app_role` enum + `has_role()` security-definer function. Apply RLS per §9, using `has_role(auth.uid(), 'admin')` to avoid recursion.
+Create all 6 tables exactly as specified in §5: `employees`, `holidays`, `attendance`, `leaves`, `payrollpage`, `payslips`. Add `app_role` enum + `has_role()` security-definer function. Apply RLS per §9, using `has_role(auth.uid(), 'admin')` to avoid recursion.
 
 Seed two demo accounts:
 - `admin@hrms.com` / `admin@123` (Admin, TM000)
@@ -39,7 +39,7 @@ Auto-create employee row on signup via trigger on `auth.users`.
 - `createEmployee` — admin creates Supabase Auth user + employees row
 - `deleteEmployee` — admin removes auth user + row
 - `approveLeave` — sets status, auto-upserts Leave attendance for weekdays excl. holidays
-- `previewPayroll` / `generatePayroll` — compute work days / present / absent / deductions, create payroll + payslip rows
+- `previewPayrollpage` / `generatePayrollpage` — compute work days / present / absent / deductions, create payrollpage + payslip rows
 - `approveAttendanceEdit` / `rejectAttendanceEdit`
 
 All authenticated reads use the browser Supabase client + RLS. Bearer auth middleware (`attachSupabaseAuth`) wired in `src/start.ts`.

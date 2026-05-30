@@ -289,6 +289,14 @@ export async function generatePayroll({ data: raw }: { data: z.input<typeof payr
       .map((h: any) => h.date)
   );
 
+  const invalidDatesSet = new Set<string>();
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const day = d.getDay();
+    const iso = d.toISOString().slice(0, 10);
+    if (day === 0 || day === 6 || holidaySet.has(iso)) invalidDatesSet.add(iso);
+  }
+
+
   let workingDays = 0;
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const day = d.getDay();
@@ -312,9 +320,14 @@ export async function generatePayroll({ data: raw }: { data: z.input<typeof payr
 
     const attendance = att ?? [];
 
-    const presentDays = attendance.filter((a: any) => a.status === "Present").length;
-    const halfDays = attendance.filter((a: any) => a.status === "Half Day").length;
-    const approvedLeaves = attendance.filter((a: any) => a.status === "Leave").length;
+    // valid working-day attendance only (ignore any mistaken weekend/holiday attendance)
+    const validAttendance = attendance.filter((a: any) => !invalidDatesSet.has(a.date));
+
+
+    const presentDays = validAttendance.filter((a: any) => a.status === "Present").length;
+    const halfDays = validAttendance.filter((a: any) => a.status === "Half Day").length;
+    const approvedLeaves = validAttendance.filter((a: any) => a.status === "Leave").length;
+
 
     // Paid-leave conversion policy (monthly):
     // - 1 Sick paid per month

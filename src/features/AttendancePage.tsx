@@ -8,6 +8,13 @@ import { fmtDate, todayISO, calcHours, initials } from "@/lib/hrms-utils";
 import { reviewAttendanceEdit } from "@/lib/admin.functions";
 import { toast } from "sonner";
 
+function isoToLocalDayOfWeek(iso: string) {
+  // iso: YYYY-MM-DD
+  const d = new Date(iso + "T00:00:00");
+  return d.getDay(); // 0=Sun..6=Sat
+}
+
+
 type AttRow = {
   id: string;
   user_auth_uid: string;

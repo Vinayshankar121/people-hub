@@ -301,6 +301,28 @@ function EmployeeAttendance({ profile }: { profile: any }) {
     if (!editRow) return;
     setSaving(true);
     try {
+      const dateISO = editRow.date;
+      const day = new Date(dateISO + "T00:00:00").getDay();
+      const isWeekend = day === 0 || day === 6;
+
+      // Block saving attendance on weekends and non-optional holidays
+      if (isWeekend) {
+        toast.error("Attendance cannot be saved on weekend");
+        return;
+      }
+
+      const { data: holidays } = await supabase
+        .from("holidays")
+        .select("date, category")
+        .gte("date", dateISO)
+        .lte("date", dateISO);
+
+      const holiday = (holidays ?? []).find((h: any) => h.date === dateISO);
+      if (holiday && holiday.category !== "Optional" && holiday.category !== "Weekend") {
+        toast.error("Attendance cannot be saved on non-optional holiday");
+        return;
+      }
+
       const hours = calcHours(editForm.punch_in, editForm.punch_out);
       await supabase.from("attendance").update({
         original_punch_in: editRow.punch_in_time,

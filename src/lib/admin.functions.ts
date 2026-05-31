@@ -492,19 +492,33 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
   const holidayCount = holidaySet.size;
 
 
+  const invalidDatesSet = new Set<string>();
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const day = d.getDay();
+    const iso = d.toISOString().slice(0, 10);
+    if (day === 0 || day === 6 || holidaySet.has(iso)) invalidDatesSet.add(iso);
+  }
+
   const preview: any[] = [];
   for (const emp of emps ?? []) {
     if (!emp.auth_uid) continue; // Skip employees without auth_uid
     
     const { data: att } = await supabaseAdmin
       .from("attendance")
-      .select("status")
+      .select("status, date")
       .eq("user_auth_uid", emp.auth_uid)
       .gte("date", startISO)
       .lte("date", endISO);
-    const present = (att ?? []).filter((a: any) => a.status === "Present").length;
-    const leaves = (att ?? []).filter((a: any) => a.status === "Leave").length;
-    const halfDays = (att ?? []).filter((a: any) => a.status === "Half Day").length;
+
+    const attendance = att ?? [];
+
+    // valid working-day attendance only (ignore any mistaken weekend/holiday attendance)
+    const validAttendance = attendance.filter((a: any) => !invalidDatesSet.has(a.date));
+
+    const presentDays = validAttendance.filter((a: any) => a.status === "Present").length;
+    const approvedLeaves = validAttendance.filter((a: any) => a.status === "Leave").length;
+    const halfDays = validAttendance.filter((a: any) => a.status === "Half Day").length;
+
 
     // Paid-leave conversion policy (monthly) - keep in sync with generatePayroll
 
@@ -563,8 +577,11 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
     const halfDayUnpaidEquivalent = halfDays * 0.5;
 
     // fullAbsentDays and deductions/net must match generatePayroll
-    const fullAbsentDays = Math.max(0, workingDays - present - leaves - halfDays);
-    const payableDays = Math.max(0, workingDays - unpaid_leave_days - fullAbsentDays - halfDayUnpaidEquivalent);
+    const fullAbsentDays = Math.max(0, workingDays - presentDays - approvedLeaves - halfDays);
+    const payableDays = Math.max(
+      0,
+      workingDays - unpaid_leave_days - fullAbsentDays - halfDayUnpaidEquivalent
+    );
 
     const leave_deductions = Math.round(perDaySalary * unpaid_leave_days * 100) / 100;
     const absence_deductions = Math.round(perDaySalary * (fullAbsentDays + halfDayUnpaidEquivalent) * 100) / 100;
@@ -595,9 +612,9 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
       yearlyHra,
       yearlyOtherAllowances,
       workingDays,
-      presentDays: present,
+      presentDays: presentDays,
       absentDays: fullAbsentDays,
-      approvedLeaves: leaves,
+      approvedLeaves: approvedLeaves,
       holidays: holidayCount,
       deductions,
       netSalary: netSalary,

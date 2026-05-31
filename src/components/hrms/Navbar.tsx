@@ -33,11 +33,33 @@ export function Navbar() {
 
   const punchIn = async () => {
     if (!profile) return;
+
+    const dateISO = todayISO();
+    const day = new Date(dateISO + "T00:00:00").getDay();
+    const isWeekend = day === 0 || day === 6;
+
+    if (isWeekend) {
+      alert("Attendance is not allowed on weekends.");
+      return;
+    }
+
+    const { data: holidays } = await supabase
+      .from("holidays")
+      .select("date, category")
+      .eq("date", dateISO)
+      .maybeSingle();
+
+    const holiday = holidays as any;
+    if (holiday && holiday.category !== "Optional" && holiday.category !== "Weekend") {
+      alert("Attendance is not allowed on company holidays.");
+      return;
+    }
+
     const time = new Date().toTimeString().slice(0, 5);
     await supabase.from("attendance").upsert(
       {
         user_auth_uid: profile.auth_uid,
-        date: todayISO(),
+        date: dateISO,
         punch_in_time: time,
         status: "Present",
         approval_status: "Approved",
@@ -49,6 +71,28 @@ export function Navbar() {
 
   const punchOut = async () => {
     if (!profile || !today?.punch_in_time) return;
+
+    const dateISO = todayISO();
+    const day = new Date(dateISO + "T00:00:00").getDay();
+    const isWeekend = day === 0 || day === 6;
+
+    if (isWeekend) {
+      alert("Attendance is not allowed on weekends.");
+      return;
+    }
+
+    const { data: holidays } = await supabase
+      .from("holidays")
+      .select("date, category")
+      .eq("date", dateISO)
+      .maybeSingle();
+
+    const holiday = holidays as any;
+    if (holiday && holiday.category !== "Optional" && holiday.category !== "Weekend") {
+      alert("Attendance is not allowed on company holidays.");
+      return;
+    }
+
     const time = new Date().toTimeString().slice(0, 5);
     const hours = calcHours(today.punch_in_time, time);
     await supabase

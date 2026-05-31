@@ -17,6 +17,7 @@ import { Route as EmployeesRouteImport } from './routes/employees'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as AttendanceRouteImport } from './routes/attendance'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminCalendarRouteImport } from './routes/admin/calendar'
 
 const PayrollRoute = PayrollRouteImport.update({
   id: '/payroll',
@@ -58,6 +59,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminCalendarRoute = AdminCalendarRouteImport.update({
+  id: '/admin/calendar',
+  path: '/admin/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -68,6 +74,7 @@ export interface FileRoutesByFullPath {
   '/leaves': typeof LeavesRoute
   '/login': typeof LoginRoute
   '/payroll': typeof PayrollRoute
+  '/admin/calendar': typeof AdminCalendarRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -78,6 +85,7 @@ export interface FileRoutesByTo {
   '/leaves': typeof LeavesRoute
   '/login': typeof LoginRoute
   '/payroll': typeof PayrollRoute
+  '/admin/calendar': typeof AdminCalendarRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -89,6 +97,7 @@ export interface FileRoutesById {
   '/leaves': typeof LeavesRoute
   '/login': typeof LoginRoute
   '/payroll': typeof PayrollRoute
+  '/admin/calendar': typeof AdminCalendarRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -101,6 +110,7 @@ export interface FileRouteTypes {
     | '/leaves'
     | '/login'
     | '/payroll'
+    | '/admin/calendar'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -111,6 +121,7 @@ export interface FileRouteTypes {
     | '/leaves'
     | '/login'
     | '/payroll'
+    | '/admin/calendar'
   id:
     | '__root__'
     | '/'
@@ -121,6 +132,7 @@ export interface FileRouteTypes {
     | '/leaves'
     | '/login'
     | '/payroll'
+    | '/admin/calendar'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -132,6 +144,7 @@ export interface RootRouteChildren {
   LeavesRoute: typeof LeavesRoute
   LoginRoute: typeof LoginRoute
   PayrollRoute: typeof PayrollRoute
+  AdminCalendarRoute: typeof AdminCalendarRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -192,6 +205,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/calendar': {
+      id: '/admin/calendar'
+      path: '/admin/calendar'
+      fullPath: '/admin/calendar'
+      preLoaderRoute: typeof AdminCalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -204,6 +224,7 @@ const rootRouteChildren: RootRouteChildren = {
   LeavesRoute: LeavesRoute,
   LoginRoute: LoginRoute,
   PayrollRoute: PayrollRoute,
+  AdminCalendarRoute: AdminCalendarRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

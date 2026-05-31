@@ -13,12 +13,13 @@ type LeaveRow = {
   user_auth_uid: string;
   start_date: string;
   end_date: string;
-  type: string;
+  leave_type: string;
   reason: string;
   status: string;
   admin_comment: string;
   employees?: { name: string; employee_id: string };
 };
+
 
 function dayCount(start: string, end: string) {
   const d = Math.ceil((new Date(end).getTime() - new Date(start).getTime()) / 86400000) + 1;
@@ -90,7 +91,7 @@ function AdminLeaves() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-3"><span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">{l.type}</span></td>
+                  <td className="px-5 py-3"><span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">{l.leave_type}</span></td>
                   <td className="px-5 py-3 text-slate-600">
                     <span>{fmtDate(l.start_date)} — {fmtDate(l.end_date)}</span>
                     <span className="ml-1.5 text-[10px] text-slate-400">({dayCount(l.start_date, l.end_date)} days)</span>
@@ -149,6 +150,7 @@ function EmployeeLeaves({ profile }: { profile: any }) {
   const [leaves, setLeaves] = useState<LeaveRow[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ start_date: "", end_date: "", type: "Casual Leave", reason: "" });
+
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -171,10 +173,11 @@ function EmployeeLeaves({ profile }: { profile: any }) {
         user_auth_uid: profile.auth_uid,
         start_date: form.start_date,
         end_date: form.end_date,
-        type: form.type,
+        leave_type: form.type,
         reason: form.reason,
         status: "Pending",
       });
+
       if (error) throw error;
       toast.success("Leave request submitted");
       setShowModal(false);
@@ -213,7 +216,8 @@ function EmployeeLeaves({ profile }: { profile: any }) {
             <tbody>
               {leaves.map((l) => (
                 <tr key={l.id} className="border-b last:border-0 hover:bg-slate-50/50 transition-colors">
-                  <td className="px-5 py-3"><span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">{l.type}</span></td>
+                  <td className="px-5 py-3"><span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">{l.leave_type}</span></td>
+
                   <td className="px-5 py-3 text-slate-600">
                     {fmtDate(l.start_date)} — {fmtDate(l.end_date)}
                     <span className="ml-1.5 text-[10px] text-slate-400">({dayCount(l.start_date, l.end_date)} days)</span>

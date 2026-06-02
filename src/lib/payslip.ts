@@ -39,6 +39,8 @@ interface PayslipData {
     presentDays: number;
     absentDays: number;
     approvedLeaves: number;
+    paidLeaves: number;
+    unpaidLeaves: number;
     holidays: number;
   };
   deductions: number;
@@ -91,7 +93,7 @@ function toWords(num: number): string {
   return rounded === 0 ? "Zero Rupees Only" : `${convert(rounded)} Rupees Only`;
 }
 
-export function generatePayslipPDF(data: PayslipData, fileName?: string) {
+export async function generatePayslipPDF(data: PayslipData, fileName?: string, returnBlob?: boolean): Promise<Blob | null> {
   const doc = new jsPDF("portrait", "mm", "a4");
 
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -170,6 +172,7 @@ export function generatePayslipPDF(data: PayslipData, fileName?: string) {
       data.employee.bank_name || "—",
       data.employee.bank_account_no || "—",
       data.employee.pan_no || "—",
+      data.employee.location || "—",
       data.employee.pf_no || "—",
       data.employee.universal_account_number || "—",
     ]],
@@ -192,24 +195,20 @@ export function generatePayslipPDF(data: PayslipData, fileName?: string) {
   y = (doc as any).lastAutoTable.finalY + 4;
 
   // Attendance Details
-  const lopDays = Math.max(
-  Number(data.attendance.absentDays || 0),
-  0
-);
- autoTable(doc, {
-  startY: y,
-  head: [["Location", "Working Days", "Present Days", "Absent Days", "Leaves", "Holidays", "LOP"]],
-  body: [[
-    data.employee.location || "—",
-    String(data.attendance.workingDays || 0),
-    String(data.attendance.presentDays || 0),
-    String(data.attendance.absentDays || 0),
-    String(data.attendance.approvedLeaves || 0),
-    String(data.attendance.holidays || 0),
-    String(lopDays),
-    
-         ]],
-  
+  const lopDays = Math.max(Number(data.attendance.absentDays || 0), 0);
+  autoTable(doc, {
+    startY: y,
+    head: [["Location", "Working Days", "Present Days", "Paid Leaves", "Unpaid Leaves", "Absent Days", "Holidays", "LOP"]],
+    body: [[
+      data.employee.location || "—",
+      String(data.attendance.workingDays || 0),
+      String(data.attendance.presentDays || 0),
+      String(data.attendance.paidLeaves || 0),
+      String(data.attendance.unpaidLeaves || 0),
+      String(data.attendance.absentDays || 0),
+      String(data.attendance.holidays || 0),
+      String(lopDays),
+    ]],
     theme: "grid",
     headStyles: {
       fillColor: [30, 64, 175],
@@ -267,9 +266,7 @@ export function generatePayslipPDF(data: PayslipData, fileName?: string) {
   autoTable(doc, {
     startY: y,
     head: [["Deductions", "Amount"]],
-    body: [
-      ["Gross Deductions", fmtCurrency(data.deductions || 0)],
-    ],
+    body: [["Gross Deductions", fmtCurrency(data.deductions || 0)]],
     theme: "grid",
     headStyles: {
       fillColor: [185, 28, 28],
@@ -289,7 +286,12 @@ export function generatePayslipPDF(data: PayslipData, fileName?: string) {
     margin: { left: margin, right: margin },
   });
 
-  y = (doc as any).lastAutoTable.finalY + 7;
+  y = (doc as any).lastAutoTable.finalY + 8;
+  doc.setFontSize(9);
+  doc.setTextColor(100, 116, 139);
+  doc.text(fmtCurrency(data.netSalary || 0), pageWidth - margin - 20, y, { align: "right" });
+
+  y += 14;
 
   // Net Pay Box
   doc.setFillColor(240, 253, 244);
@@ -303,12 +305,12 @@ export function generatePayslipPDF(data: PayslipData, fileName?: string) {
 
   doc.setFontSize(14);
   doc.text(
-  fmtCurrency(Number(data.netSalary || 0)),
-  pageWidth - margin - 5,
-  y + 9,
-  { align: "right" }
-);
-   
+    fmtCurrency(Number(data.netSalary || 0)),
+    pageWidth - margin - 5,
+    y + 9,
+    { align: "right" }
+  );
+
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(71, 85, 105);
@@ -340,8 +342,12 @@ export function generatePayslipPDF(data: PayslipData, fileName?: string) {
     { align: "center" }
   );
 
-  const pdfFileName =
-    fileName || `Payslip_${data.employee.employee_id}_${data.month}_${data.year}.pdf`;
+  const pdfFileName = fileName || `Payslip_${data.employee.employee_id}_${data.month}_${data.year}.pdf`;
+
+  if (returnBlob) {
+    return doc.output("blob");
+  }
 
   doc.save(pdfFileName);
+  return null;
 }

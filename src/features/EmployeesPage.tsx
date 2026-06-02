@@ -159,6 +159,7 @@ const openEdit = (emp: Employee) => {
             date_of_birth: form.date_of_birth || undefined,
             pan_no: form.pan_no,
             pf_no: form.pf_no,
+            location: form.location,
             universal_account_number: form.universal_account_number,
             bank_name: form.bank_name,
             bank_account_no: form.bank_account_no,

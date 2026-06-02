@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { CalendarCheck, Pencil, Check, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarCheck, Pencil, Search, Check, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Modal } from "@/components/hrms/Modal";
@@ -7,6 +7,7 @@ import { Badge } from "@/components/hrms/Badge";
 import { fmtDate, todayISO, calcHours, initials } from "@/lib/hrms-utils";
 import { reviewAttendanceEdit } from "@/lib/admin.functions";
 import { toast } from "sonner";
+
 
 function isoToLocalDayOfWeek(iso: string) {
   // iso: YYYY-MM-DD
@@ -31,6 +32,9 @@ type AttRow = {
   employees?: { name: string; employee_id: string };
 };
 
+type AdminAttendanceStatus = "Present" | "Absent" | "Half Day" | "Leave";
+
+
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 export function AttendancePage() {
@@ -41,14 +45,27 @@ export function AttendancePage() {
 
 /* ─── Admin View ─── */
 function AdminAttendance() {
+  // Existing daily log view
   const [date, setDate] = useState(todayISO());
   const [rows, setRows] = useState<AttRow[]>([]);
   const [pending, setPending] = useState<AttRow[]>([]);
-  const [employees, setEmployees] = useState<{ auth_uid: string; name: string; employee_id: string }[]>([]);
+  const [employees, setEmployees] = useState<{ auth_uid: string; name: string; employee_id: string; email?: string }[]>([]);
   const [empFilter, setEmpFilter] = useState("All");
   const [editRow, setEditRow] = useState<AttRow | null>(null);
   const [editForm, setEditForm] = useState({ punch_in: "", punch_out: "", status: "" });
   const [saving, setSaving] = useState(false);
+
+  // Manual upsert section
+  const [empQuery, setEmpQuery] = useState("");
+  const [selectedAuthUid, setSelectedAuthUid] = useState<string>("");
+
+  const [selectedDate, setSelectedDate] = useState(todayISO());
+  const [manualStatus, setManualStatus] = useState<AdminAttendanceStatus>("Present");
+  const [manualPunchIn, setManualPunchIn] = useState<string>("");
+  const [manualPunchOut, setManualPunchOut] = useState<string>("");
+  const [manualRemarks, setManualRemarks] = useState<string>("");
+  const [manualSaving, setManualSaving] = useState<boolean>(false);
+
 
   const loadAll = async () => {
     const { data: emps } = await supabase.from("employees").select("auth_uid, name, employee_id");
@@ -91,17 +108,26 @@ function AdminAttendance() {
     if (!editRow) return;
     setSaving(true);
     try {
-      const punchIn = editForm.punch_in ? editForm.punch_in : undefined;
-      const punchOut = editForm.punch_out ? editForm.punch_out : undefined;
+      const punchIn = editForm.punch_in || "";
+      const punchOut = editForm.punch_out || "";
       const hours = editForm.status === "Absent" ? 0 : calcHours(editForm.punch_in ?? "", editForm.punch_out ?? "");
-      await supabase.from("attendance").update({
-        punch_in_time: punchIn,
-        punch_out_time: punchOut,
-        total_hours: hours,
-        status: editForm.status,
-        edit_requested: false,
-        approval_status: "Approved",
-      }).eq("id", editRow.id);
+
+      await supabase
+        .from("attendance")
+        .upsert(
+          {
+            user_auth_uid: editRow.user_auth_uid,
+            date: editRow.date,
+            punch_in_time: punchIn,
+            punch_out_time: punchOut,
+            total_hours: hours,
+            status: editForm.status,
+            approval_status: "Approved",
+            edit_requested: false,
+            remarks: editRow.remarks || "",
+          },
+          { onConflict: "user_auth_uid,date" }
+        );
       toast.success("Attendance updated successfully");
       setEditRow(null);
       loadAll();
@@ -127,6 +153,172 @@ function AdminAttendance() {
           {employees.map((em) => <option key={em.auth_uid} value={em.auth_uid}>{em.name} ({em.employee_id})</option>)}
         </select>
       </div>
+
+      {/* Manual Admin Attendance (Upsert) */}
+      <div className="bg-white rounded-2xl border p-5">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Manual Attendance Management</h2>
+            <p className="text-sm text-slate-500 mt-1">Search employee by ID / Email / Name and upsert attendance for any past date.</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-600">Search Employee</label>
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                <Search className="h-4 w-4" />
+              </div>
+              <input
+                value={empQuery}
+                onChange={(e) => {
+                  setEmpQuery(e.target.value);
+                  setSelectedAuthUid("");
+                }}
+                placeholder="Employee ID, Email, or Name"
+                className="pl-9 pr-3 py-2.5 rounded-xl border bg-white text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand/30"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                const q = empQuery.trim();
+                if (!q) {
+                  setSelectedAuthUid("");
+                  return;
+                }
+
+                try {
+                  const { data: found, error } = await supabase
+                    .from("employees")
+                    .select("auth_uid, employee_id, name, email")
+                    .or(`employee_id.ilike.%${q}%,email.ilike.%${q}%,name.ilike.%${q}%`)
+                    .limit(1)
+                    .maybeSingle();
+
+                  if (error) throw error;
+                  if (!found) {
+                    toast.error("No employee found for the given search");
+                    setSelectedAuthUid("");
+                    return;
+                  }
+
+                  setSelectedAuthUid(found.auth_uid);
+                  toast.success(`Selected: ${found.name} (${found.employee_id})`);
+                } catch (err: any) {
+                  toast.error(err?.message ?? "Failed to search employee");
+                }
+              }}
+              className="mt-2 w-full px-4 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 text-sm font-medium transition border"
+            >
+              Select Employee
+            </button>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-600">Attendance Date</label>
+            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="px-3 py-2.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-600">Status</label>
+            <select value={manualStatus} onChange={(e) => setManualStatus(e.target.value as AdminAttendanceStatus)} className="px-3 py-2.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
+              <option value="Present">Present</option>
+              <option value="Absent">Absent</option>
+              <option value="Half Day">Half Day</option>
+              <option value="Leave">Leave</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-600">Modification Reason (Audit)</label>
+            <input value={manualRemarks} onChange={(e) => setManualRemarks(e.target.value)} placeholder="e.g., Historical correction" className="px-3 py-2.5 rounded-xl border bg-white text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-600">Punch In Time</label>
+            <input type="time" value={manualPunchIn} onChange={(e) => setManualPunchIn(e.target.value)} className="px-3 py-2.5 rounded-xl border bg-white text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-600">Punch Out Time</label>
+            <input type="time" value={manualPunchOut} onChange={(e) => setManualPunchOut(e.target.value)} className="px-3 py-2.5 rounded-xl border bg-white text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-5 pt-4 border-t">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedAuthUid("");
+              setEmpQuery("");
+              setSelectedDate(todayISO());
+              setManualStatus("Present");
+              setManualPunchIn("");
+              setManualPunchOut("");
+              setManualRemarks("");
+            }}
+            className="px-4 py-2 rounded-xl text-sm text-slate-600 hover:bg-slate-100 transition border"
+          >
+            Reset
+          </button>
+
+          <button
+            type="button"
+            disabled={manualSaving}
+            onClick={async () => {
+              if (!selectedAuthUid) {
+                toast.error("Please select an employee");
+                return;
+              }
+              if (!selectedDate) {
+                toast.error("Please select a date");
+                return;
+              }
+              if (manualStatus === "Present" && !manualPunchIn) {
+                toast.error("Punch In time is required when status is Present");
+                return;
+              }
+
+              const hours = manualStatus === "Absent" || manualStatus === "Leave" ? 0 : calcHours(manualPunchIn ?? "", manualPunchOut ?? "");
+
+              try {
+                setManualSaving(true);
+
+                await supabase
+                  .from("attendance")
+                  .upsert(
+                    {
+                      user_auth_uid: selectedAuthUid,
+                      date: selectedDate,
+                      punch_in_time: manualPunchIn || "",
+                      punch_out_time: manualPunchOut || "",
+                      total_hours: hours,
+                      status: manualStatus,
+                      approval_status: "Approved",
+                      edit_requested: false,
+                      remarks: manualRemarks || "",
+                    },
+                    { onConflict: "user_auth_uid,date" }
+                  );
+
+                toast.success("Attendance saved (upserted) successfully");
+                await loadAll();
+              } catch (err: any) {
+                toast.error(err?.message ?? "Failed to save attendance");
+              } finally {
+                setManualSaving(false);
+              }
+            }}
+            className="px-5 py-2 rounded-xl bg-brand text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 transition"
+          >
+            {manualSaving ? "Saving…" : "Save Attendance"}
+          </button>
+        </div>
+      </div>
+
 
       {/* Attendance Table */}
       <div className="bg-white rounded-2xl border overflow-hidden">
@@ -313,15 +505,20 @@ function EmployeeAttendance({ profile }: { profile: any }) {
 
       const { data: holidays } = await supabase
         .from("holidays")
-        .select("date, category")
+        .select("date, type")
         .gte("date", dateISO)
         .lte("date", dateISO);
 
       const holiday = (holidays ?? []).find((h: any) => h.date === dateISO);
-      if (holiday && holiday.category !== "Optional" && holiday.category !== "Weekend") {
-        toast.error("Attendance cannot be saved on non-optional holiday");
-        return;
+      if (holiday && holiday.type) {
+        // keep existing employee restrictions behavior lightweight; admin can override via manual upsert
+        if (holiday.type !== "National" && holiday.type !== "Company") {
+          toast.error("Attendance cannot be saved on this holiday");
+          return;
+        }
       }
+
+
 
       const hours = calcHours(editForm.punch_in, editForm.punch_out);
       await supabase.from("attendance").update({

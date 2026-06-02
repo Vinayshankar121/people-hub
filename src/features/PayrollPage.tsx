@@ -31,6 +31,8 @@ type PayrollRow = {
   holidays: number;
   deductions: number;
   netSalary: number;
+  paid_leaves_used?: number;
+  unpaid_leave_days?: number;
   status: string;
 
   employee_id?: string;
@@ -63,6 +65,15 @@ type PreviewRow = {
   netSalary: number;
 };
 
+type PayslipHistoryRow = {
+  id: string;
+  payroll_id: string;
+  user_auth_uid: string;
+  pdf_path: string;
+  pdfUrl?: string | null;
+  created_at: string;
+};
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -86,6 +97,7 @@ function AdminPayroll() {
   const [year, setYear] = useState(now.getFullYear());
   const [preview, setPreview] = useState<PreviewRow[] | null>(null);
   const [history, setHistory] = useState<PayrollRow[]>([]);
+  const [payslipHistory, setPayslipHistory] = useState<PayslipHistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -105,8 +117,23 @@ function AdminPayroll() {
     setHistory((data as PayrollRow[]) ?? []);
   };
 
+  const loadPayslipHistory = async () => {
+    const { data, error } = await supabase
+      .from("payslips")
+      .select("id, payroll_id, user_auth_uid, pdf_path, pdfUrl, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    setPayslipHistory((data as PayslipHistoryRow[]) ?? []);
+  };
+
   useEffect(() => {
     loadHistory();
+    loadPayslipHistory();
   }, []);
 
   const handlePreview = async () => {
@@ -251,7 +278,51 @@ function AdminPayroll() {
         <h2 className="text-lg font-semibold text-slate-900 mb-3">
           Payroll History
         </h2>
-        <PayrollTable rows={history} showEmployee />
+        <PayrollTable rows={history} showEmployee onPayslipSaved={loadPayslipHistory} />
+      </div>
+
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900 mb-3">
+          Saved Payslip Downloads
+        </h2>
+        <div className="bg-white rounded-2xl border p-4 shadow-sm">
+          {payslipHistory.length === 0 ? (
+            <p className="text-sm text-slate-500">No saved payslip downloads yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-slate-50/60">
+                    <th className="text-left px-4 py-3 font-medium text-slate-500">Pay Period / Payroll</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-500">Downloaded</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-500">Link</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payslipHistory.map((item) => (
+                    <tr key={item.id} className="border-b last:border-0 hover:bg-slate-50/50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {item.payroll_id || item.pdf_path || "Payslip"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {new Date(item.created_at).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.pdfUrl ? (
+                          <a href={item.pdfUrl} target="_blank" rel="noreferrer" className="text-brand hover:underline">
+                            View PDF
+                          </a>
+                        ) : (
+                          <span className="text-slate-500">No URL</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
       <Modal
@@ -291,6 +362,7 @@ function AdminPayroll() {
 /* ─── Employee View ─── */
 function EmployeePayroll({ profile }: { profile: any }) {
   const [history, setHistory] = useState<PayrollRow[]>([]);
+  const [payslipHistory, setPayslipHistory] = useState<PayslipHistoryRow[]>([]);
 
   useEffect(() => {
     const loadEmployeePayroll = async () => {
@@ -308,7 +380,23 @@ function EmployeePayroll({ profile }: { profile: any }) {
       setHistory((data as PayrollRow[]) ?? []);
     };
 
+    const loadEmployeePayslipHistory = async () => {
+      const { data, error } = await supabase
+        .from("payslips")
+        .select("id, payroll_id, user_auth_uid, pdf_path, pdfUrl, created_at")
+        .eq("user_auth_uid", profile.auth_uid)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      setPayslipHistory((data as PayslipHistoryRow[]) ?? []);
+    };
+
     loadEmployeePayroll();
+    loadEmployeePayslipHistory();
   }, [profile.auth_uid]);
 
   return (
@@ -327,7 +415,62 @@ function EmployeePayroll({ profile }: { profile: any }) {
         showEmployee={false}
         employeeName={profile.name}
         employeeId={profile.employee_id}
+        onPayslipSaved={async () => {
+          const { data, error } = await supabase
+            .from("payslips")
+            .select("id, payroll_id, user_auth_uid, pdf_path, pdfUrl, created_at")
+            .eq("user_auth_uid", profile.auth_uid)
+            .order("created_at", { ascending: false });
+
+          if (!error) {
+            setPayslipHistory((data as PayslipHistoryRow[]) ?? []);
+          }
+        }}
       />
+
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900 mb-3">
+          Saved Payslip Downloads
+        </h2>
+        <div className="bg-white rounded-2xl border p-4 shadow-sm">
+          {payslipHistory.length === 0 ? (
+            <p className="text-sm text-slate-500">No saved payslip downloads yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-slate-50/60">
+                    <th className="text-left px-4 py-3 font-medium text-slate-500">Period</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-500">Downloaded</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-500">Link</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payslipHistory.map((item) => (
+                    <tr key={item.id} className="border-b last:border-0 hover:bg-slate-50/50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {item.payroll_id || item.pdf_path || "Payslip"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {new Date(item.created_at).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.pdfUrl ? (
+                          <a href={item.pdfUrl} target="_blank" rel="noreferrer" className="text-brand hover:underline">
+                            View PDF
+                          </a>
+                        ) : (
+                          <span className="text-slate-500">No URL</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -338,60 +481,142 @@ function PayrollTable({
   showEmployee,
   employeeName,
   employeeId,
+  onPayslipSaved,
 }: {
   rows: PayrollRow[];
   showEmployee: boolean;
   employeeName?: string;
   employeeId?: string;
+  onPayslipSaved?: () => Promise<void>;
 }) {
-  const downloadPdf = (row: PayrollRow) => {
+  const downloadPdf = async (row: PayrollRow | any) => {
     const name = row.name ?? employeeName ?? "Employee";
     const eid = row.employee_id ?? employeeId ?? "";
+    const payrollId = row.id ?? null;
+    const authUid = row.user_auth_uid ?? row.auth_uid;
+    if (!authUid) {
+      toast.error("Missing employee UID for payslip storage");
+      return;
+    }
 
-    generatePayslipPDF({
-      month: row.month,
-      year: row.year,
+    try {
+      const filename = `${eid || authUid || 'emp'}-payslip-${row.year}-${row.month}.pdf`;
 
-      employee: {
-        name,
-        employee_id: eid,
-        department: row.department || "",
-        designation: row.designation || "",
-        email: row.email || "",
-        phone: row.phone || "",
-        joiningDate: row.joiningDate || "",
-        date_of_birth: row.date_of_birth || "",
-        location: row.location || "",
-        bank_name: row.bank_name || "",
-        bank_account_no: row.bank_account_no || "",
-        pan_no: row.pan_no || "",
-        pf_no: row.pf_no || "",
-        universal_account_number: row.universal_account_number || "",
-      },
+      const blob = await generatePayslipPDF({
+        month: row.month,
+        year: row.year,
 
-      salary: {
-        monthlySalary: Number(row.monthlySalary || 0),
-        yearlySalary: Number(row.yearlySalary || 0),
-        basicSalary: Number(row.basicSalary || 0),
-        hra: Number(row.hra || 0),
-        otherAllowances: Number(row.other_allowances || 0),
-        yearlyBasic: Number(row.yearly_basic || 0),
-        yearlyHra: Number(row.yearly_hra || 0),
-        yearlyOtherAllowances: Number(row.yearly_other_allowances || 0),
-      },
+        employee: {
+          name,
+          employee_id: eid,
+          department: row.department || "",
+          designation: row.designation || "",
+          email: row.email || "",
+          phone: row.phone || "",
+          joiningDate: row.joiningDate || "",
+          date_of_birth: row.date_of_birth || "",
+          location: row.location || "",
+          bank_name: row.bank_name || "",
+          bank_account_no: row.bank_account_no || "",
+          pan_no: row.pan_no || "",
+          pf_no: row.pf_no || "",
+          universal_account_number: row.universal_account_number || "",
+        },
 
-      attendance: {
-        workingDays: Number(row.workingDays || 0),
-        presentDays: Number(row.presentDays || 0),
-        absentDays: Number(row.absentDays || 0),
-        approvedLeaves: Number(row.approvedLeaves || 0),
-        holidays: Number(row.holidays || 0),
-      },
+        salary: {
+          monthlySalary: Number(row.monthlySalary || 0),
+          yearlySalary: Number(row.yearlySalary || 0),
+          basicSalary: Number(row.basicSalary || 0),
+          hra: Number(row.hra || 0),
+          otherAllowances: Number(row.other_allowances || 0),
+          yearlyBasic: Number(row.yearly_basic || 0),
+          yearlyHra: Number(row.yearly_hra || 0),
+          yearlyOtherAllowances: Number(row.yearly_other_allowances || 0),
+        },
 
-      deductions: Number(row.deductions || 0),
-      netSalary: Number(row.netSalary || 0),
-      status: row.status || "Paid",
-    });
+        attendance: {
+          workingDays: Number(row.workingDays || 0),
+          presentDays: Number(row.presentDays || 0),
+          absentDays: Number(row.absentDays || 0),
+          approvedLeaves: Number(row.approvedLeaves || 0),
+          paidLeaves: Number(row.paid_leaves_used || 0),
+          unpaidLeaves: Number(row.unpaid_leave_days || 0),
+          holidays: Number(row.holidays || 0),
+        },
+
+        deductions: Number(row.deductions || 0),
+        netSalary: Number(row.netSalary || 0),
+        status: row.status || "Paid",
+      }, filename, true as any);
+
+      if (blob) {
+        // trigger browser download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        // upload to Supabase storage
+        const path = `payslips/${payrollId ?? authUid}_${row.year}_${row.month}_${Date.now()}.pdf`;
+        let storageUploaded = false;
+        let publicUrl: string | null = null;
+
+        try {
+          const { error: uploadError } = await supabase.storage
+            .from("payslips")
+            .upload(path, blob, { upsert: true, contentType: "application/pdf" });
+          if (uploadError) throw uploadError;
+
+          const { data: publicData } = supabase.storage.from("payslips").getPublicUrl(path);
+          publicUrl = (publicData as any)?.publicUrl ?? null;
+          storageUploaded = true;
+        } catch (uploadErr: any) {
+          const message = String(uploadErr?.message || uploadErr);
+          if (message.includes("bucket not found") || message.includes("Bucket not found") || message.includes("does not exist")) {
+            toast.warning("Payslip downloaded locally, but the Supabase storage bucket 'payslips' is not configured. Create the bucket or update the app storage settings.");
+          } else {
+            throw uploadErr;
+          }
+        }
+
+        if (storageUploaded) {
+          const payload = {
+            payroll_id: payrollId,
+            user_auth_uid: authUid,
+            pdf_path: path,
+            pdfUrl,
+          };
+
+          let saveError = null as any;
+          if (payrollId) {
+            const { error } = await supabase
+              .from("payslips")
+              .upsert([payload], { onConflict: "payroll_id" });
+            saveError = error;
+          } else {
+            const { error } = await supabase
+              .from("payslips")
+              .insert(payload);
+            saveError = error;
+          }
+
+          if (saveError) throw saveError;
+          await onPayslipSaved?.();
+          toast.success("Payslip downloaded and saved");
+        } else {
+          toast.success("Payslip downloaded locally");
+        }
+      } else {
+        // fallback: generatePayslipPDF triggered download already
+        toast.success("Payslip downloaded");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to download/save payslip");
+    }
   };
 
   return (

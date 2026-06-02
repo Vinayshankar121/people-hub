@@ -91,11 +91,204 @@ const payrollMonthSchema = z.object({
   year: z.number().int().min(2000).max(3000),
 });
 
+const pad = (value: number) => String(value).padStart(2, "0");
+function toISODateUTC(date: Date) {
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+}
+
+function makeMonthRangeUTC(month: number, year: number) {
+  // Payroll period runs from the 27th of the previous month
+  // through the 26th of the given month (inclusive).
+  const startMonthIndex = (month - 2 + 12) % 12; // zero-based month index for previous month
+  const startYear = month === 1 ? year - 1 : year;
+  const start = new Date(Date.UTC(startYear, startMonthIndex, 27));
+  const end = new Date(Date.UTC(year, month - 1, 26));
+  return { start, end, startISO: toISODateUTC(start), endISO: toISODateUTC(end) };
+}
+
+function makePayrollDaySets(start: Date, end: Date, holidaySet: Set<string>) {
+  const invalidDatesSet = new Set<string>();
+  let workingDays = 0;
+
+  for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const day = d.getUTCDay();
+    const iso = toISODateUTC(d);
+    if (day === 0 || day === 6 || holidaySet.has(iso)) invalidDatesSet.add(iso);
+    if (day !== 0 && day !== 6 && !holidaySet.has(iso)) workingDays++;
+  }
+
+  return { invalidDatesSet, workingDays };
+}
+
+function calculatePayrollLeaveSummary(emp: any, leaves: any[]) {
+  const paidEligibleSick = leaves
+    .filter(
+      (l: any) =>
+        l.leave_type === "Sick Leave" &&
+        l.is_paid_leave === true &&
+        !l.converted_to_lwp
+    )
+    .reduce((sum: number, r: any) => sum + Number(r.days_count || 0), 0);
+
+  const paidEligibleCasual = leaves
+    .filter(
+      (l: any) =>
+        l.leave_type === "Casual Leave" &&
+        l.is_paid_leave === true &&
+        !l.converted_to_lwp
+    )
+    .reduce((sum: number, r: any) => sum + Number(r.days_count || 0), 0);
+
+  const monthlyFreeTotal = Number((emp as any).monthly_free_total ?? 2);
+  const totalPaidEligible = paidEligibleSick + paidEligibleCasual;
+  const paid_leaves_used = Math.min(totalPaidEligible, monthlyFreeTotal);
+
+  const paidSickUsed = Math.min(paidEligibleSick, paid_leaves_used);
+  const paidCasualUsed = Math.min(
+    paidEligibleCasual,
+    Math.max(0, paid_leaves_used - paidSickUsed)
+  );
+
+  const unpaidFromLeaves = leaves
+    .filter(
+      (l: any) =>
+        !l.is_paid_leave ||
+        l.converted_to_lwp ||
+        l.leave_type === "Leave Without Pay"
+    )
+    .reduce((sum: number, r: any) => sum + Number(r.days_count || 0), 0);
+
+  const extraEligiblePaid = Math.max(
+    0,
+    totalPaidEligible - paid_leaves_used
+  );
+
+  const unpaid_leave_days = Math.max(0, unpaidFromLeaves + extraEligiblePaid);
+
+  return {
+    paidEligibleSick,
+    paidEligibleCasual,
+    monthlyFreeTotal,
+    paidSickUsed,
+    paidCasualUsed,
+    paid_leaves_used,
+    unpaidFromLeaves,
+    extraEligiblePaid,
+    unpaid_leave_days,
+  };
+}
+
+// Fetch leaves for a user for a month range. Some DBs may not have `days_count` column
+// (older migration state). Try to select `days_count` first; if PostgREST errors
+// about the missing column, fall back to selecting `start_date`/`end_date` and
+// compute the days count client-side (inclusive).
+async function fetchLeavesForMonth(userAuthUid: string, startISO: string, endISO: string) {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("leaves")
+      .select("leave_type, days_count, is_paid_leave, converted_to_lwp, start_date, end_date, status, user_auth_uid")
+      .eq("user_auth_uid", userAuthUid)
+      .eq("status", "Approved")
+      .lte("start_date", endISO)
+      .gte("end_date", startISO);
+
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({ ...r, days_count: Number(r.days_count ?? 1) }));
+  } catch (err: any) {
+    const msg = String(err?.message ?? err);
+    if (msg.includes("days_count") || msg.includes("is_paid_leave") || msg.includes("converted_to_lwp") || msg.includes("column")) {
+      // Fallback: select only essential columns and compute days_count (working days)
+      const { data, error } = await supabaseAdmin
+        .from("leaves")
+        .select("leave_type, start_date, end_date, status, user_auth_uid")
+        .eq("user_auth_uid", userAuthUid)
+        .eq("status", "Approved")
+        .lte("start_date", endISO)
+        .gte("end_date", startISO);
+
+      if (error) throw new Error(`Failed loading leaves (fallback): ${error.message}`);
+      const rows = data ?? [];
+      // Compute working days (exclude weekends and holidays) for each leave
+      return Promise.all(
+        (rows as any[]).map(async (r: any) => {
+          const s = new Date(r.start_date);
+          const e = new Date(r.end_date);
+          // fetch holidays in range to exclude them
+          const { data: hol, error: holErr } = await supabaseAdmin
+            .from("holidays")
+            .select("date")
+            .gte("date", r.start_date)
+            .lte("date", r.end_date);
+          if (holErr) throw new Error(`Failed loading holidays for leave fallback: ${holErr.message}`);
+          const holidaySet = new Set((hol ?? []).map((h: any) => h.date));
+          let count = 0;
+          for (let d = new Date(s); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
+            const iso = toISODateUTC(d);
+            const day = d.getUTCDay();
+            if (day === 0 || day === 6) continue;
+            if (holidaySet.has(iso)) continue;
+            count++;
+          }
+          // Provide sensible defaults for missing fields: assume paid by default and not converted
+          return { ...r, days_count: Number(count || 1), is_paid_leave: true, converted_to_lwp: false };
+        })
+      );
+    }
+    throw err;
+  }
+}
+
+async function safeUpsertPayrollRows(rows: any[]) {
+  const attemptUpsert = async (payload: any[]) => {
+    const { error } = await supabaseAdmin
+      .from("payroll")
+      .upsert(payload, { onConflict: "user_auth_uid,month,year" });
+    return error;
+  };
+
+  let error = await attemptUpsert(rows);
+  if (!error) return;
+
+  const missingColumns = Array.from(new Set(
+    (error.message.match(/column \"([^\"]+)\" does not exist/g) || [])
+      .map((m) => m.replace(/column \"([^\"]+)\" does not exist/, "$1"))
+  ));
+
+  if (missingColumns.length === 0) {
+    throw new Error(`Failed saving payroll rows: ${error.message}`);
+  }
+
+  const filteredRows = rows.map((row) => {
+    const cleaned: any = { ...row };
+    for (const column of missingColumns) {
+      delete cleaned[column];
+    }
+    return cleaned;
+  });
+
+  const retryError = await attemptUpsert(filteredRows);
+  if (retryError) {
+    throw new Error(`Failed saving payroll rows after removing unsupported columns (${missingColumns.join(', ')}): ${retryError.message}`);
+  }
+}
+
 // ── Functions ─────────────────────────────────────────────────────
 
 export async function createEmployee({ data: raw }: { data: z.input<typeof createEmployeeSchema> }) {
   const data = createEmployeeSchema.parse(raw);
   await assertAdmin();
+
+  const { data: existing, error: existingErr } = await supabaseAdmin
+    .from("employees")
+    .select("id")
+    .or(`email.eq.${data.email},employee_id.eq.${data.employee_id}`)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingErr) throw new Error(existingErr.message);
+  if (existing) {
+    throw new Error("An employee with this email or employee ID already exists.");
+  }
 
   const password = data.password || `${data.employee_id}@123`;
   const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
@@ -126,11 +319,14 @@ export async function createEmployee({ data: raw }: { data: z.input<typeof creat
     },
   });
   if (error) throw new Error(error.message);
+  if (!created?.user?.id) throw new Error("Failed to create Supabase auth user");
 
-  // trigger creates the employees row; ensure full update
-  const updatePayload: any = {
+  const authUid = created.user.id;
+  const payload: any = {
+    auth_uid: authUid,
     employee_id: data.employee_id,
     name: data.name,
+    email: data.email,
     department: data.department,
     designation: data.designation,
     salary: data.salary,
@@ -147,12 +343,16 @@ export async function createEmployee({ data: raw }: { data: z.input<typeof creat
     universal_account_number: data.universal_account_number,
   };
 
-  await supabaseAdmin
+  const { error: upsertError } = await supabaseAdmin
     .from("employees")
-    .update(updatePayload)
-    .eq("auth_uid", created.user!.id);
+    .upsert(payload, { onConflict: "auth_uid" });
 
-  return { success: true };
+  if (upsertError) {
+    await supabaseAdmin.auth.admin.deleteUser(authUid).catch(() => null);
+    throw new Error(upsertError.message);
+  }
+
+  return { success: true, auth_uid: authUid };
 }
 
 export async function deleteEmployee({ data: raw }: { data: z.input<typeof deleteEmployeeSchema> }) {
@@ -265,18 +465,13 @@ export async function generatePayroll({ data: raw }: { data: z.input<typeof payr
   await assertAdmin();
 
   const { month, year } = data;
-
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 0);
-  const startISO = start.toISOString().slice(0, 10);
-  const endISO = end.toISOString().slice(0, 10);
+  const { start, end, startISO, endISO } = makeMonthRangeUTC(month, year);
 
   const { data: emps } = await supabaseAdmin
     .from("employees")
     .select("*")
     .eq("role", "Employee");
 
-  // Monthly calendar working day count = non-weekend days - (non-optional non-weekend holidays)
   const { data: holidays } = await supabaseAdmin
     .from("holidays")
     .select("date, category")
@@ -289,165 +484,124 @@ export async function generatePayroll({ data: raw }: { data: z.input<typeof payr
       .map((h: any) => h.date)
   );
 
-  const invalidDatesSet = new Set<string>();
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const day = d.getDay();
-    const iso = d.toISOString().slice(0, 10);
-    if (day === 0 || day === 6 || holidaySet.has(iso)) invalidDatesSet.add(iso);
-  }
-
-
-  let workingDays = 0;
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const day = d.getDay();
-    const iso = d.toISOString().slice(0, 10);
-    if (day !== 0 && day !== 6 && !holidaySet.has(iso)) workingDays++;
-  }
-
+  const { invalidDatesSet, workingDays: rawWorkingDays } = makePayrollDaySets(start, end, holidaySet);
+  let workingDays = rawWorkingDays;
   if (workingDays < 1) workingDays = 1;
 
   const rows: any[] = [];
+  const errors: string[] = [];
 
   for (const emp of emps ?? []) {
     if (!emp.auth_uid) continue;
 
-    const { data: att } = await supabaseAdmin
-      .from("attendance")
-      .select("status")
-      .eq("user_auth_uid", emp.auth_uid)
-      .gte("date", startISO)
-      .lte("date", endISO);
+    try {
+      const { data: att } = await supabaseAdmin
+        .from("attendance")
+        .select("status, date")
+        .eq("user_auth_uid", emp.auth_uid)
+        .gte("date", startISO)
+        .lte("date", endISO);
 
-    const attendance = att ?? [];
+      const attendance = att ?? [];
 
-    // valid working-day attendance only (ignore any mistaken weekend/holiday attendance)
-    const validAttendance = attendance.filter((a: any) => !invalidDatesSet.has(a.date));
+      // valid working-day attendance only (ignore any mistaken weekend/holiday attendance)
+      const validAttendance = attendance.filter((a: any) => !invalidDatesSet.has(a.date));
 
+      const normalizeStatus = (status: any) => {
+        const s = String(status ?? "").trim();
+        const upper = s.toUpperCase();
+        if (upper === "PRESENT") return "Present";
+        if (upper === "HALF DAY") return "Half Day";
+        if (upper === "LEAVE") return "Leave";
+        if (upper === "ABSENT") return "Absent";
+        return s;
+      };
 
-    const presentDays = validAttendance.filter((a: any) => a.status === "Present").length;
-    const halfDays = validAttendance.filter((a: any) => a.status === "Half Day").length;
-    const approvedLeaves = validAttendance.filter((a: any) => a.status === "Leave").length;
-
-
-    // Paid-leave conversion policy (monthly):
-    // - 1 Sick paid per month
-    // - 1 Casual paid per month
-    // - extras become unpaid/LWP
-    // NOTE: Attendance rows for Leave do not carry leave_type/is_paid_leave; backend uses leaves table.
-    const { data: leavesRows } = await supabaseAdmin
-      .from("leaves")
-      .select("leave_type, days_count, is_paid_leave, converted_to_lwp")
-      .eq("user_auth_uid", emp.auth_uid)
-      .eq("status", "Approved")
-      .gte("start_date", startISO)
-      .lte("end_date", endISO);
-
-    const leaves = leavesRows ?? [];
-
-    const paidEligibleSick = leaves
-      .filter(
-        (l: any) =>
-          l.leave_type === "Sick Leave" &&
-          l.is_paid_leave === true &&
-          !l.converted_to_lwp
-      )
-      .reduce((sum: number, r: any) => sum + Number(r.days_count || 0), 0);
-
-    const paidEligibleCasual = leaves
-      .filter(
-        (l: any) =>
-          l.leave_type === "Casual Leave" &&
-          l.is_paid_leave === true &&
-          !l.converted_to_lwp
-      )
-      .reduce((sum: number, r: any) => sum + Number(r.days_count || 0), 0);
-
-    // According to requirement: one sick + one casual paid per month.
-    const monthlyFreeSick = Number((emp as any).monthly_free_sick ?? 1);
-    const monthlyFreeCasual = Number((emp as any).monthly_free_casual ?? 1);
+      const presentDays = validAttendance.filter((a: any) => normalizeStatus(a.status) === "Present").length;
+      const halfDays = validAttendance.filter((a: any) => normalizeStatus(a.status) === "Half Day").length;
+      const approvedLeaves = validAttendance.filter((a: any) => normalizeStatus(a.status) === "Leave").length;
+      const fullAbsentDays = Math.max(0, workingDays - presentDays - approvedLeaves - halfDays);
 
 
-    const paidSickUsed = Math.min(paidEligibleSick, monthlyFreeSick);
-    const paidCasualUsed = Math.min(paidEligibleCasual, monthlyFreeCasual);
+      // Paid-leave conversion policy (monthly):
+      // - 2 paid leaves per month total
+      // - extra approved Sick/Casual paid leave days become unpaid/LWP
+      // NOTE: Attendance rows for Leave do not carry leave_type/is_paid_leave; backend uses leaves table.
+      const leaves = await fetchLeavesForMonth(emp.auth_uid, startISO, endISO);
+      const leaveSummary = calculatePayrollLeaveSummary(emp, leaves);
+      const { paid_leaves_used, unpaid_leave_days } = leaveSummary;
 
-    const paid_leaves_used = paidSickUsed + paidCasualUsed;
+      const perDaySalary = Number(emp.salary || 0) / workingDays;
+
+      // Half Day logic:
+      // - Half Day = 0.5 unpaid day per half-day
+      // - Full absent days exclude presentDays, approvedLeaves, and halfDays
+      // Deduction days = fullAbsentDays + halfDayUnpaidEquivalent + unpaid_leave_days
+      const halfDayUnpaidEquivalent = halfDays * 0.5;
+
+      const deductionDays = fullAbsentDays + halfDayUnpaidEquivalent + unpaid_leave_days;
+
+      const leave_deductions = Math.round(perDaySalary * unpaid_leave_days * 100) / 100;
+
+      // Split remaining absence portion (full absent + half-day unpaid equivalent)
+      const absence_deductions = Math.round(perDaySalary * (fullAbsentDays + halfDayUnpaidEquivalent) * 100) / 100;
 
 
+      const deductions = leave_deductions + absence_deductions;
 
-    // Unpaid/LWP includes:
-    // - unpaid/converted leaves days
-    // - plus extra eligible paid leave days beyond monthly free
-    const unpaidFromLeaves = leaves
-      .filter((l: any) => !l.is_paid_leave || l.converted_to_lwp || l.leave_type === "Leave Without Pay")
-      .reduce((sum: number, r: any) => sum + Number(r.days_count || 0), 0);
+      const netSalary = Math.round((Number(emp.salary || 0) - deductions) * 100) / 100;
 
-    // Extra eligible paid leave that didn't fit monthly free => unpaid
-    const extraEligiblePaid = Math.max(0, (paidEligibleSick + paidEligibleCasual) - paid_leaves_used);
+      // Salary breakdown (kept as-is: Basic/HRA/Other)
+      const monthlySalary = Number(emp.salary || 0);
+      const yearlySalary = monthlySalary * 12;
+      const basicSalary = monthlySalary * 0.50;
+      const hra = monthlySalary * 0.30;
+      const otherAllowances = monthlySalary * 0.20;
+      const yearlyBasic = basicSalary * 12;
+      const yearlyHra = hra * 12;
+      const yearlyOtherAllowances = otherAllowances * 12;
 
-    const unpaid_leave_days = Math.max(0, unpaidFromLeaves + extraEligiblePaid);
+      rows.push({
+        user_auth_uid: emp.auth_uid,
+        month,
+        year,
+        "basicSalary": basicSalary,
+        "monthlySalary": monthlySalary,
+        "yearlySalary": yearlySalary,
+        hra,
+        other_allowances: otherAllowances,
+        yearly_basic: yearlyBasic,
+        yearly_hra: yearlyHra,
+        yearly_other_allowances: yearlyOtherAllowances,
+        "workingDays": workingDays,
+        presentDays,
+        absentDays: fullAbsentDays,
 
-    const perDaySalary = Number(emp.salary || 0) / workingDays;
+        // Track approvedLeaves as full-day leave count from attendance
+        approvedLeaves,
+        holidays: holidaySet.size,
+        deductions,
+        leave_deductions,
+        paid_leaves_used,
+        unpaid_leave_days,
+        netSalary,
+        status: "Paid",
+      });
+    } catch (err: any) {
+      const id = emp.employee_id ?? emp.auth_uid ?? '<unknown>';
+      errors.push(`${id}: ${err?.message ?? String(err)}`);
+      continue;
+    }
 
-    // Half Day logic:
-    // - Half Day = 0.5 unpaid day per half-day
-    // - Full absent days exclude presentDays, approvedLeaves, and halfDays (halfDays are unpaid equivalents separately)
-    const halfDayUnpaidEquivalent = halfDays * 0.5;
-
-    // Full absent days = workingDays - presentDays - approvedLeaves - halfDays
-    const fullAbsentDays = Math.max(0, workingDays - presentDays - approvedLeaves - halfDays);
-
-    // Payable days = workingDays - unpaid_leave_days - fullAbsentDays - (halfDays * 0.5)
-    const leave_deductions = Math.round(perDaySalary * unpaid_leave_days * 100) / 100;
-
-    // Absence deduction = fullAbsentDays + (halfDays * 0.5)
-    const absence_deductions = Math.round(perDaySalary * (fullAbsentDays + halfDayUnpaidEquivalent) * 100) / 100;
-
-    const deductions = leave_deductions + absence_deductions;
-
-    const netSalary = Math.round((Number(emp.salary || 0) - deductions) * 100) / 100;
-
-    // Salary breakdown (kept as-is: Basic/HRA/Other)
-    const monthlySalary = Number(emp.salary || 0);
-    const yearlySalary = monthlySalary * 12;
-    const basicSalary = monthlySalary * 0.50;
-    const hra = monthlySalary * 0.30;
-    const otherAllowances = monthlySalary * 0.20;
-    const yearlyBasic = basicSalary * 12;
-    const yearlyHra = hra * 12;
-    const yearlyOtherAllowances = otherAllowances * 12;
-
-    rows.push({
-      user_auth_uid: emp.auth_uid,
-      month,
-      year,
-      "basicSalary": basicSalary,
-      "monthlySalary": monthlySalary,
-      "yearlySalary": yearlySalary,
-      hra,
-      other_allowances: otherAllowances,
-      yearly_basic: yearlyBasic,
-      yearly_hra: yearlyHra,
-      yearly_other_allowances: yearlyOtherAllowances,
-      "workingDays": workingDays,
-      presentDays,
-      // Track absentDays as full-day absents only (half-days handled via unpaid equivalents)
-      absentDays: fullAbsentDays,
-      // Track approvedLeaves as full-day leave count from attendance
-      approvedLeaves,
-      holidays: holidaySet.size,
-      deductions,
-      leave_deductions,
-      paid_leaves_used,
-      unpaid_leave_days,
-      netSalary,
-      status: "Paid",
-    });
   }
 
   if (rows.length) {
-    await supabaseAdmin
-      .from("payroll")
-      .upsert(rows, { onConflict: "user_auth_uid,month,year" });
+    await safeUpsertPayrollRows(rows);
+  }
+
+  if (errors.length) {
+    const msg = `Payroll partial success: ${rows.length} saved, ${errors.length} failed. Errors: ${errors.join(' | ')}`;
+    throw new Error(msg);
   }
 
   return { success: true, count: rows.length };
@@ -459,10 +613,7 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
   await assertAdmin();
 
   const { month, year } = data;
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 0);
-  const startISO = start.toISOString().slice(0, 10);
-  const endISO = end.toISOString().slice(0, 10);
+  const { start, end, startISO, endISO } = makeMonthRangeUTC(month, year);
 
   const { data: emps } = await supabaseAdmin
     .from("employees")
@@ -480,24 +631,11 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
       .map((h: any) => h.date)
   );
 
-  let workingDays = 0;
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const day = d.getDay();
-    const iso = d.toISOString().slice(0, 10);
-    if (day !== 0 && day !== 6 && !holidaySet.has(iso)) workingDays++;
-  }
-
+  const { invalidDatesSet, workingDays: rawWorkingDays } = makePayrollDaySets(start, end, holidaySet);
+  let workingDays = rawWorkingDays;
   if (workingDays < 1) workingDays = 1;
 
   const holidayCount = holidaySet.size;
-
-
-  const invalidDatesSet = new Set<string>();
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const day = d.getDay();
-    const iso = d.toISOString().slice(0, 10);
-    if (day === 0 || day === 6 || holidaySet.has(iso)) invalidDatesSet.add(iso);
-  }
 
   const preview: any[] = [];
   for (const emp of emps ?? []) {
@@ -515,60 +653,26 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
     // valid working-day attendance only (ignore any mistaken weekend/holiday attendance)
     const validAttendance = attendance.filter((a: any) => !invalidDatesSet.has(a.date));
 
-    const presentDays = validAttendance.filter((a: any) => a.status === "Present").length;
-    const approvedLeaves = validAttendance.filter((a: any) => a.status === "Leave").length;
-    const halfDays = validAttendance.filter((a: any) => a.status === "Half Day").length;
+    const normalizeStatus = (status: any) => {
+      const s = String(status ?? "").trim();
+      const upper = s.toUpperCase();
+      if (upper === "PRESENT") return "Present";
+      if (upper === "HALF DAY") return "Half Day";
+      if (upper === "LEAVE") return "Leave";
+      if (upper === "ABSENT") return "Absent";
+      return s;
+    };
+
+    const presentDays = validAttendance.filter((a: any) => normalizeStatus(a.status) === "Present").length;
+    const approvedLeaves = validAttendance.filter((a: any) => normalizeStatus(a.status) === "Leave").length;
+    const halfDays = validAttendance.filter((a: any) => normalizeStatus(a.status) === "Half Day").length;
 
 
     // Paid-leave conversion policy (monthly) - keep in sync with generatePayroll
 
-    const { data: leavesRows } = await supabaseAdmin
-      .from("leaves")
-      .select("leave_type, days_count, is_paid_leave, converted_to_lwp")
-      .eq("user_auth_uid", emp.auth_uid)
-      .eq("status", "Approved")
-      .gte("start_date", startISO)
-      .lte("end_date", endISO);
-
-    const leavesData = leavesRows ?? [];
-
-    const paidEligibleSick = leavesData
-      .filter(
-        (l: any) =>
-          l.leave_type === "Sick Leave" &&
-          l.is_paid_leave === true &&
-          !l.converted_to_lwp
-      )
-      .reduce((sum: number, r: any) => sum + Number(r.days_count || 0), 0);
-
-    const paidEligibleCasual = leavesData
-      .filter(
-        (l: any) =>
-          l.leave_type === "Casual Leave" &&
-          l.is_paid_leave === true &&
-          !l.converted_to_lwp
-      )
-      .reduce((sum: number, r: any) => sum + Number(r.days_count || 0), 0);
-
-    const monthlyFreeSick = Number((emp as any).monthly_free_sick ?? 1);
-    const monthlyFreeCasual = Number((emp as any).monthly_free_casual ?? 1);
-
-    const paidSickUsed = Math.min(paidEligibleSick, monthlyFreeSick);
-    const paidCasualUsed = Math.min(paidEligibleCasual, monthlyFreeCasual);
-
-    const paid_leaves_used = paidSickUsed + paidCasualUsed;
-
-
-
-    const unpaidFromLeaves = leavesData
-      .filter(
-        (l: any) => !l.is_paid_leave || l.converted_to_lwp || l.leave_type === "Leave Without Pay"
-      )
-      .reduce((sum: number, r: any) => sum + Number(r.days_count || 0), 0);
-
-    const extraEligiblePaid = Math.max(0, (paidEligibleSick + paidEligibleCasual) - paid_leaves_used);
-
-    const unpaid_leave_days = Math.max(0, unpaidFromLeaves + extraEligiblePaid);
+    const leavesData = await fetchLeavesForMonth(emp.auth_uid, startISO, endISO);
+    const leaveSummary = calculatePayrollLeaveSummary(emp, leavesData);
+    const { paid_leaves_used, unpaid_leave_days } = leaveSummary;
 
 
     const perDaySalary = Number(emp.salary || 0) / workingDays;
@@ -612,12 +716,12 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
       yearlyHra,
       yearlyOtherAllowances,
       workingDays,
-      presentDays: presentDays,
+      presentDays,
       absentDays: fullAbsentDays,
-      approvedLeaves: approvedLeaves,
+      approvedLeaves,
       holidays: holidayCount,
       deductions,
-      netSalary: netSalary,
+      netSalary,
       paid_leaves_used,
       unpaid_leave_days,
       leave_deductions,

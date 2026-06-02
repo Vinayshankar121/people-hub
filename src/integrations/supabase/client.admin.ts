@@ -13,6 +13,14 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     "[Supabase Admin] Missing VITE_SUPABASE_URL or VITE_SUPABASE_SERVICE_ROLE_KEY — admin operations will fail.",
   );
 }
+// Mask the service key when logging to avoid leaking secrets.
+if (SUPABASE_SERVICE_ROLE_KEY) {
+  const key = String(SUPABASE_SERVICE_ROLE_KEY);
+  const masked = `${key.slice(0, 4)}...${key.slice(-4)}`;
+  console.info(`[Supabase Admin] service role key loaded (masked): ${masked}`);
+} else {
+  console.info("[Supabase Admin] service role key not present in import.meta.env");
+}
 
 export const supabaseAdmin = createClient<Database>(
   SUPABASE_URL ?? "",

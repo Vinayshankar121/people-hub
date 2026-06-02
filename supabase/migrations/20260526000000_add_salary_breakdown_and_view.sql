@@ -44,6 +44,7 @@ SELECT
   e.bank_name,
   e.bank_account_no,
   e.pan_no,
+  e.location,
   e.pf_no,
   e.universal_account_number,
   e.date_of_birth

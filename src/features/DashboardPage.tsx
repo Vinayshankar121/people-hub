@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
-  Users, UserCheck, UserX, Clock, DollarSign, ArrowRight,
+  
+  Users, UserCheck, UserX, Clock, IndianRupee, ArrowRight,
   PlaneTakeoff, Wallet, CalendarDays, CalendarCheck,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -50,7 +51,7 @@ function AdminDashboard() {
         <StatCard title="Present Today" value={stats.present} icon={UserCheck} color="emerald" />
         <StatCard title="Absent Today" value={stats.absent} icon={UserX} color="rose" />
         <StatCard title="Pending Leaves" value={stats.pending} icon={Clock} color="amber" />
-        <StatCard title="Monthly Payroll" value={fmtMoney(stats.payroll)} icon={DollarSign} color="violet" />
+        <StatCard title="Monthly Payroll" value={fmtMoney(stats.payroll)} icon={IndianRupee} color="violet" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

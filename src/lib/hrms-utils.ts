@@ -30,8 +30,9 @@ export function fmtDate(d: string | Date | null | undefined) {
 }
 
 export function fmtMoney(n: number | null | undefined) {
-  return `$${(Number(n) || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  return `Rs. ${(Number(n) || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
+
 
 export function todayISO() {
   return new Date().toISOString().slice(0, 10);

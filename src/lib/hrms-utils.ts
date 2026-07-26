@@ -30,9 +30,11 @@ export function fmtDate(d: string | Date | null | undefined) {
 }
 
 export function fmtMoney(n: number | null | undefined) {
-  return `Rs. ${(Number(n) || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  return `₹ ${(Number(n) || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
-
 
 export function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -48,12 +50,85 @@ export function initials(name?: string | null) {
     .toUpperCase();
 }
 
-export function calcHours(inTime: string, outTime: string) {
+export const DEFAULT_STANDARD_WORKING_DAYS = Number(import.meta.env.VITE_STANDARD_WORKING_DAYS ?? 25);
+export const DEFAULT_STANDARD_WORKING_HOURS = Number(import.meta.env.VITE_STANDARD_WORKING_HOURS ?? 9);
+export const DEFAULT_OVERTIME_MULTIPLIER = Number(import.meta.env.VITE_OVERTIME_MULTIPLIER ?? 1.5);
+
+export function roundToTwoDecimals(value: number | null | undefined) {
+  const parsed = Number(value || 0);
+  return Math.round(parsed * 100) / 100;
+}
+
+export function calculateWorkedHours(inTime: string | null | undefined, outTime: string | null | undefined) {
   if (!inTime || !outTime) return 0;
   const [ih, im] = inTime.split(":").map(Number);
   const [oh, om] = outTime.split(":").map(Number);
   const diff = oh * 60 + om - (ih * 60 + im);
-  return Math.max(0, Math.round((diff / 60) * 100) / 100);
+  return roundToTwoDecimals(Math.max(0, diff / 60));
+}
+
+export function calcHours(inTime: string | null | undefined, outTime: string | null | undefined) {
+  return calculateWorkedHours(inTime, outTime);
+}
+
+export function calculateHourlyRate(
+  monthlySalary: number | null | undefined,
+  standardWorkingDays = DEFAULT_STANDARD_WORKING_DAYS,
+  standardWorkingHours = DEFAULT_STANDARD_WORKING_HOURS
+) {
+  const standardHours = standardWorkingDays * standardWorkingHours;
+  if (!standardHours) return 0;
+  return roundToTwoDecimals(Number(monthlySalary || 0) / standardHours);
+}
+
+export function calculateOvertime(totalWorkedHours: number | null | undefined, standardWorkingHours = DEFAULT_STANDARD_WORKING_HOURS) {
+  const overtimeHours = Math.max(0, Number(totalWorkedHours || 0) - standardWorkingHours);
+  return {
+    overtimeHours: roundToTwoDecimals(overtimeHours),
+    hasOvertime: overtimeHours > 0,
+  };
+}
+
+export function calculateSalary({
+  monthlySalary,
+  standardWorkingDays = DEFAULT_STANDARD_WORKING_DAYS,
+  standardWorkingHours = DEFAULT_STANDARD_WORKING_HOURS,
+  totalWorkedHours,
+  overtimeMultiplier = DEFAULT_OVERTIME_MULTIPLIER,
+}: {
+  monthlySalary: number | null | undefined;
+  standardWorkingDays?: number;
+  standardWorkingHours?: number;
+  totalWorkedHours: number | null | undefined;
+  overtimeMultiplier?: number;
+}) {
+  const hourlyRate = calculateHourlyRate(monthlySalary, standardWorkingDays, standardWorkingHours);
+  const workedHours = Number(totalWorkedHours || 0);
+  const { overtimeHours } = calculateOvertime(workedHours, standardWorkingHours);
+  const overtimePay = roundToTwoDecimals(overtimeHours * hourlyRate * overtimeMultiplier);
+  const grossSalary = roundToTwoDecimals((hourlyRate * workedHours) + overtimePay);
+
+  return {
+    hourlyRate,
+    grossSalary,
+    overtimeHours,
+    overtimePay,
+  };
+}
+
+export function formatHours(totalHours: number | null | undefined) {
+  const hours = Number(totalHours || 0);
+  const wholeHours = Math.floor(hours);
+  const minutes = Math.round((hours - wholeHours) * 60);
+  return `${wholeHours} hrs ${String(minutes).padStart(2, "0")} mins`;
+}
+
+export function getAttendanceStatusFromHours(totalHours: number | null | undefined, hasApprovedLeave = false) {
+  if (hasApprovedLeave) return "Leave";
+  const hours = Number(totalHours || 0);
+  if (hours >= 9) return "Present";
+  if (hours >= 4.5) return "Half Day";
+  return "Absent";
 }
 
 export function eachDateInRange(start: string, end: string) {
@@ -69,5 +144,6 @@ export function eachDateInRange(start: string, end: string) {
 
 export function isWeekend(iso: string) {
   const day = new Date(iso).getDay();
-  return day === 0 || day === 6;
+  return day === 0;
 }
+

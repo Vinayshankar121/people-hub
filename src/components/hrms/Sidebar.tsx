@@ -37,6 +37,7 @@ const NAV = [
   { to: "/payroll", label: "Payroll", icon: Wallet, adminOnly: false },
   { to: "/holidays", label: "Holidays", icon: CalendarDays, adminOnly: false },
   { to: "/calendar", label: "Calendar", icon: CalIcon, adminOnly: false },
+  { to: "/appraisals", label: "Appraisals", icon: CalendarDays, adminOnly: false },
 ];
 
 /* ── Sidebar component ── */
@@ -44,7 +45,8 @@ const NAV = [
 export function Sidebar() {
   const { profile, signOut } = useAuth();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
-  const isAdmin = profile?.role === "Admin";
+  const isAdmin = profile?.role === "Admin" || profile?.role === "CEO";
+  const isCeo = profile?.role === "CEO";
   const { open, close } = useSidebar();
 
   const sidebarContent = (
@@ -64,7 +66,7 @@ export function Sidebar() {
 
       {/* Navigation links */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {NAV.filter((n) => !n.adminOnly || isAdmin).map((item) => {
+        {NAV.filter((n) => !n.adminOnly || isAdmin || isCeo).map((item) => {
           const active = pathname === item.to;
           return (
             <Link

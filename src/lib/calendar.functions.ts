@@ -20,6 +20,11 @@ const generateCalendarSchema = z.object({
   year: z.number().int().min(2020).max(2030),
 });
 
+function isAdminOrCeoRole(role?: string): boolean {
+  return role === "Admin" || role === "CEO";
+}
+
+
 const bulkImportHolidaysSchema = z.object({
   holidays: z.array(
     z.object({
@@ -51,7 +56,7 @@ export async function updateCalendarConfig({
     .eq("auth_uid", session.user.id)
     .single();
 
-  if (emp?.role !== "Admin") throw new Error("Admin only");
+  if (!isAdminOrCeoRole(emp?.role)) throw new Error("Admin or CEO only");
 
   const { error, data: updated } = await supabaseAdmin
     .from("calendar_config")
@@ -84,7 +89,7 @@ export async function generateYearlyCalendar({
     .eq("auth_uid", session.user.id)
     .single();
 
-  if (emp?.role !== "Admin") throw new Error("Admin only");
+  if (!isAdminOrCeoRole(emp?.role)) throw new Error("Admin or CEO only");
 
   // Get calendar config
   const { data: config } = await supabaseAdmin
@@ -172,7 +177,7 @@ export async function bulkImportHolidays({
     .eq("auth_uid", session.user.id)
     .single();
 
-  if (emp?.role !== "Admin") throw new Error("Admin only");
+  if (!isAdminOrCeoRole(emp?.role)) throw new Error("Admin or CEO only");
 
   const formattedHolidays = payload.holidays.map((h) => ({
     date: h.date,
@@ -313,7 +318,7 @@ export async function sendHolidayNotification(
     .eq("auth_uid", session.user.id)
     .single();
 
-  if (emp?.role !== "Admin") throw new Error("Admin only");
+  if (!isAdminOrCeoRole(emp?.role)) throw new Error("Admin or CEO only");
 
   // Get all employees
   const { data: employees } = await supabaseAdmin

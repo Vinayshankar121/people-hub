@@ -16,6 +16,7 @@ import { Route as HolidaysRouteImport } from './routes/holidays'
 import { Route as EmployeesRouteImport } from './routes/employees'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as AttendanceRouteImport } from './routes/attendance'
+import { Route as AppraisalsRouteImport } from './routes/appraisals'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminCalendarRouteImport } from './routes/admin/calendar'
 
@@ -54,6 +55,11 @@ const AttendanceRoute = AttendanceRouteImport.update({
   path: '/attendance',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppraisalsRoute = AppraisalsRouteImport.update({
+  id: '/appraisals',
+  path: '/appraisals',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -67,6 +73,7 @@ const AdminCalendarRoute = AdminCalendarRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/appraisals': typeof AppraisalsRoute
   '/attendance': typeof AttendanceRoute
   '/calendar': typeof CalendarRoute
   '/employees': typeof EmployeesRoute
@@ -78,6 +85,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/appraisals': typeof AppraisalsRoute
   '/attendance': typeof AttendanceRoute
   '/calendar': typeof CalendarRoute
   '/employees': typeof EmployeesRoute
@@ -90,6 +98,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/appraisals': typeof AppraisalsRoute
   '/attendance': typeof AttendanceRoute
   '/calendar': typeof CalendarRoute
   '/employees': typeof EmployeesRoute
@@ -103,6 +112,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/appraisals'
     | '/attendance'
     | '/calendar'
     | '/employees'
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/appraisals'
     | '/attendance'
     | '/calendar'
     | '/employees'
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/appraisals'
     | '/attendance'
     | '/calendar'
     | '/employees'
@@ -137,6 +149,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppraisalsRoute: typeof AppraisalsRoute
   AttendanceRoute: typeof AttendanceRoute
   CalendarRoute: typeof CalendarRoute
   EmployeesRoute: typeof EmployeesRoute
@@ -198,6 +211,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AttendanceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/appraisals': {
+      id: '/appraisals'
+      path: '/appraisals'
+      fullPath: '/appraisals'
+      preLoaderRoute: typeof AppraisalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -217,6 +237,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppraisalsRoute: AppraisalsRoute,
   AttendanceRoute: AttendanceRoute,
   CalendarRoute: CalendarRoute,
   EmployeesRoute: EmployeesRoute,

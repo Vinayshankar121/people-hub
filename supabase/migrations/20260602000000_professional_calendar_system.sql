@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS public.calendar_config (
 ALTER TABLE public.calendar_config ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Calendar config: all auth read" ON public.calendar_config FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Calendar config: admin update" ON public.calendar_config FOR UPDATE USING (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Calendar config: admin update" ON public.calendar_config FOR UPDATE USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
 
 -- Enhanced holidays table with more detailed categorization
 ALTER TABLE public.holidays
@@ -47,9 +47,9 @@ CREATE TABLE IF NOT EXISTS public.calendar_events (
 ALTER TABLE public.calendar_events ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Calendar events: all auth read" ON public.calendar_events FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Calendar events: admin insert" ON public.calendar_events FOR INSERT WITH CHECK (public.has_role(auth.uid(),'Admin'));
-CREATE POLICY "Calendar events: admin update" ON public.calendar_events FOR UPDATE USING (public.has_role(auth.uid(),'Admin'));
-CREATE POLICY "Calendar events: admin delete" ON public.calendar_events FOR DELETE USING (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Calendar events: admin insert" ON public.calendar_events FOR INSERT WITH CHECK (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
+CREATE POLICY "Calendar events: admin update" ON public.calendar_events FOR UPDATE USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
+CREATE POLICY "Calendar events: admin delete" ON public.calendar_events FOR DELETE USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
 
 -- Calendar notifications
 CREATE TABLE IF NOT EXISTS public.calendar_notifications (
@@ -69,7 +69,7 @@ ALTER TABLE public.calendar_notifications ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Notifications: user read own" ON public.calendar_notifications FOR SELECT USING (auth.uid() = user_auth_uid);
 CREATE POLICY "Notifications: user insert own" ON public.calendar_notifications FOR INSERT WITH CHECK (auth.uid() = user_auth_uid);
-CREATE POLICY "Notifications: admin manage all" ON public.calendar_notifications FOR ALL USING (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Notifications: admin manage all" ON public.calendar_notifications FOR ALL USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
 
 -- Initialize default calendar config
 INSERT INTO public.calendar_config (company_name, weekend_days, financial_year_start, max_paid_leaves_per_month, total_paid_leaves_per_year)

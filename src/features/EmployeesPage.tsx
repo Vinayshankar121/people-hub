@@ -19,7 +19,7 @@ type Employee = {
   joiningDate: string | null;
   salary: number;
   phone: string;
-  role: "Admin" | "Employee";
+  role: "Admin" | "Employee" | "CEO";
 
   date_of_birth?: string | null;
   bank_name?: string;
@@ -41,7 +41,7 @@ const EMPTY_FORM = {
   salary: 0,
   joiningDate: new Date().toISOString().slice(0, 10),
   phone: "",
-  role: "Employee" as "Admin" | "Employee",
+  role: "Employee" as "Admin" | "Employee" | "CEO",
 
   date_of_birth: null as string | null,
   bank_name: "",
@@ -191,7 +191,7 @@ const openEdit = (emp: Employee) => {
     }
   };
 
-  if (profile?.role !== "Admin") return null;
+  if (profile?.role !== "Admin" && profile?.role !== "CEO") return null;
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -225,6 +225,7 @@ const openEdit = (emp: Employee) => {
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="px-3 py-2.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
           <option value="All">All Roles</option>
           <option value="Admin">Admin</option>
+          <option value="CEO">CEO</option>
           <option value="Employee">Employee</option>
         </select>
       </div>
@@ -268,7 +269,7 @@ const openEdit = (emp: Employee) => {
                     <p className="text-slate-700">{emp.designation}</p>
                     <div className="flex items-center gap-1.5 mt-1">
                       <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">{emp.department}</span>
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${emp.role === "Admin" ? "bg-violet-50 text-violet-700" : "bg-slate-100 text-slate-600"}`}>{emp.role}</span>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${emp.role === "Admin" ? "bg-violet-50 text-violet-700" : emp.role === "CEO" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{emp.role}</span>
                     </div>
                   </td>
                   <td className="px-5 py-3 text-slate-600">{emp.phone || "—"}</td>
@@ -341,8 +342,9 @@ const openEdit = (emp: Employee) => {
             <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 555-0150" className="input-field" />
           </Field>
           <Field label="Access Role" required>
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as "Admin" | "Employee" })} className="input-field">
+            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as "Admin" | "Employee" | "CEO" })} className="input-field">
               <option value="Employee">Employee</option>
+              <option value="CEO">CEO</option>
               <option value="Admin">Admin</option>
             </select>
           </Field>

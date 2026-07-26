@@ -31,9 +31,9 @@ type CalendarConfig = {
 
 export function CalendarManagementPage() {
   const { profile } = useAuth();
-  const isAdmin = profile?.role === "Admin";
+  const isAdmin = profile?.role === "Admin" || profile?.role === "CEO";
 
-  if (!isAdmin) return <div className="p-6 text-center text-slate-500">Admin access required</div>;
+  if (!isAdmin) return <div className="p-6 text-center text-slate-500">Admin/CEO access required</div>;
 
   return (
     <div className="space-y-8 max-w-7xl">

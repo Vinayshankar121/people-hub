@@ -1,12 +1,12 @@
--- Add salary breakdown columns to payroll table
+-- Add hour-based payroll columns for attendance-driven salary calculations
 ALTER TABLE public.payroll
-  ADD COLUMN IF NOT EXISTS "monthlySalary" NUMERIC NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS "yearlySalary" NUMERIC NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS hra NUMERIC NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS "otherAllowances" NUMERIC NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS "yearlyBasic" NUMERIC NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS "yearlyHra" NUMERIC NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS "yearlyOtherAllowances" NUMERIC NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS "standardWorkingDays" INTEGER NOT NULL DEFAULT 25,
+  ADD COLUMN IF NOT EXISTS "standardWorkingHours" INTEGER NOT NULL DEFAULT 9,
+  ADD COLUMN IF NOT EXISTS "hourlyRate" NUMERIC NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "totalWorkedHours" NUMERIC NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "overtimeHours" NUMERIC NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "grossSalary" NUMERIC NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "overtimeMultiplier" NUMERIC NOT NULL DEFAULT 1.5;
 
 DROP VIEW IF EXISTS public.payroll_with_employee_details;
 CREATE VIEW public.payroll_with_employee_details AS
@@ -30,6 +30,13 @@ SELECT
   p."yearlyBasic",
   p."yearlyHra",
   p."yearlyOtherAllowances",
+  p."standardWorkingDays",
+  p."standardWorkingHours",
+  p."hourlyRate",
+  p."totalWorkedHours",
+  p."overtimeHours",
+  p."grossSalary",
+  p."overtimeMultiplier",
   p.status,
   p.created_at,
   p.updated_at,
@@ -50,6 +57,3 @@ SELECT
   e.date_of_birth
 FROM public.payroll p
 JOIN public.employees e ON p.user_auth_uid = e.auth_uid;
-
--- Create RLS policy for the VIEW (users can see their own, admins see all)
--- Note: Views don't have direct RLS, but querying through the view inherits from the underlying tables

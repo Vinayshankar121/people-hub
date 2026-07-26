@@ -25,7 +25,7 @@ const EVENT_COLORS: Record<string, string> = {
 
 export function CalendarPage() {
   const { profile } = useAuth();
-  const isAdmin = profile?.role === "Admin";
+  const isAdmin = profile?.role === "Admin" || profile?.role === "CEO";
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [employees, setEmployees] = useState<{ auth_uid: string; name: string; employee_id: string }[]>([]);
   const [empFilter, setEmpFilter] = useState("All");

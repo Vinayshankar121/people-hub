@@ -83,7 +83,7 @@ const MONTHS = [
 export function isWeekend(date: string, weekendDays: string[]): boolean {
   const d = new Date(date + "T00:00:00Z");
   const dayName = DAYS_OF_WEEK[d.getUTCDay()];
-  return weekendDays.includes(dayName);
+  return dayName === "Sunday";
 }
 
 /**

@@ -42,10 +42,13 @@ interface PayslipData {
     paidLeaves: number;
     unpaidLeaves: number;
     holidays: number;
+    halfDays?: number;
   };
   deductions: number;
   netSalary: number;
   status: string;
+  appraisalApplied?: boolean;
+  appraisalEffectiveFrom?: string;
 }
 
 const MONTHS = [
@@ -101,32 +104,37 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
   const margin = 12;
   let y = 12;
 
-  const grossMonthly =
-    Number(data.salary.basicSalary || 0) +
-    Number(data.salary.hra || 0) +
-    Number(data.salary.otherAllowances || 0);
+  const monthlySalary = Number(data.salary.monthlySalary || 0);
+  const basicSalary = Number(data.salary.basicSalary || 0) || Math.round(monthlySalary * 0.5 * 100) / 100;
+  const hra = Number(data.salary.hra || 0) || Math.round(monthlySalary * 0.3 * 100) / 100;
+  const otherAllowances = Number(data.salary.otherAllowances || 0) || Math.round(monthlySalary * 0.2 * 100) / 100;
 
-  const grossYearly =
-    Number(data.salary.yearlyBasic || 0) +
-    Number(data.salary.yearlyHra || 0) +
-    Number(data.salary.yearlyOtherAllowances || 0);
+  const yearlyBasic = Number(data.salary.yearlyBasic || 0) || Math.round(basicSalary * 12 * 100) / 100;
+  const yearlyHra = Number(data.salary.yearlyHra || 0) || Math.round(hra * 12 * 100) / 100;
+  const yearlyOtherAllowances = Number(data.salary.yearlyOtherAllowances || 0) || Math.round(otherAllowances * 12 * 100) / 100;
+  const yearlySalary = Number(data.salary.yearlySalary || 0) || Math.round(monthlySalary * 12 * 100) / 100 || (yearlyBasic + yearlyHra + yearlyOtherAllowances);
+
+  const grossMonthly = basicSalary + hra + otherAllowances;
+  const grossYearly = yearlyBasic + yearlyHra + yearlyOtherAllowances;
+
+  const yearlyNetSalary = Math.round((yearlySalary - Number(data.deductions || 0) * 12) * 100) / 100 || Math.round(Number(data.netSalary || 0) * 12 * 100) / 100;
 
   // Header
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
-  doc.setTextColor(30, 64, 175);
+  doc.setTextColor(20, 20, 20);
   doc.text("TECH MINDS IT SOLUTIONS", pageWidth / 2, y, { align: "center" });
 
   y += 7;
   doc.setFontSize(11);
-  doc.setTextColor(71, 85, 105);
+  doc.setTextColor(71, 71, 71);
   doc.text(`PAYSLIP - ${MONTHS[data.month - 1]} ${data.year}`, pageWidth / 2, y, {
     align: "center",
   });
 
   doc.setFontSize(8);
   doc.setTextColor(255, 255, 255);
-  doc.setFillColor(22, 163, 74);
+  doc.setFillColor(34, 34, 34);
   doc.roundedRect(pageWidth - margin - 28, 10, 28, 8, 2, 2, "F");
   doc.text(data.status || "Paid", pageWidth - margin - 14, 15.5, { align: "center" });
 
@@ -148,7 +156,7 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
     ]],
     theme: "grid",
     headStyles: {
-      fillColor: [30, 64, 175],
+      fillColor: [34, 34, 34],
       textColor: [255, 255, 255],
       fontStyle: "bold",
       halign: "center",
@@ -156,7 +164,7 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
     },
     bodyStyles: {
       fontSize: 8,
-      textColor: [15, 23, 42],
+      textColor: [51, 51, 51],
       halign: "center",
     },
     margin: { left: margin, right: margin },
@@ -172,13 +180,44 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
       data.employee.bank_name || "—",
       data.employee.bank_account_no || "—",
       data.employee.pan_no || "—",
-      data.employee.location || "—",
       data.employee.pf_no || "—",
       data.employee.universal_account_number || "—",
     ]],
     theme: "grid",
     headStyles: {
-      fillColor: [51, 65, 85],
+      fillColor: [64, 64, 64],
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      halign: "center",
+      fontSize: 8,
+    },
+    bodyStyles: {
+      fontSize: 8,
+      textColor: [51, 51, 51],
+      halign: "center",
+    },
+    margin: { left: margin, right: margin },
+  });
+
+  y = (doc as any).lastAutoTable.finalY + 4;
+
+  // Attendance Details
+  autoTable(doc, {
+    startY: y,
+    head: [["Location", "Working Days", "Present Days", "Half Days", "Leave Days", "Absent Days", "Holidays", "LOP Days"]],
+    body: [[
+      data.employee.location || "—",
+      String(data.attendance.workingDays || 0),
+      String(data.attendance.presentDays || 0),
+      String(data.attendance.halfDays || 0),
+      String(data.attendance.approvedLeaves || 0),
+      String(data.attendance.absentDays || 0),
+      String(data.attendance.holidays || 0),
+      String(data.attendance.unpaidLeaves || 0),
+    ]],
+    theme: "grid",
+    headStyles: {
+      fillColor: [30, 64, 175],
       textColor: [255, 255, 255],
       fontStyle: "bold",
       halign: "center",
@@ -192,22 +231,15 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
     margin: { left: margin, right: margin },
   });
 
-  y = (doc as any).lastAutoTable.finalY + 4;
+  y = (doc as any).lastAutoTable.finalY + 7;
 
-  // Attendance Details
-  const lopDays = Math.max(Number(data.attendance.absentDays || 0), 0);
+  // Appraisal Summary
   autoTable(doc, {
     startY: y,
-    head: [["Location", "Working Days", "Present Days", "Paid Leaves", "Unpaid Leaves", "Absent Days", "Holidays", "LOP"]],
+    head: [["Appraisal Applied", "Effective From"]],
     body: [[
-      data.employee.location || "—",
-      String(data.attendance.workingDays || 0),
-      String(data.attendance.presentDays || 0),
-      String(data.attendance.paidLeaves || 0),
-      String(data.attendance.unpaidLeaves || 0),
-      String(data.attendance.absentDays || 0),
-      String(data.attendance.holidays || 0),
-      String(lopDays),
+      data.appraisalApplied ? "Yes" : "No",
+      formatDate(data.appraisalEffectiveFrom),
     ]],
     theme: "grid",
     headStyles: {
@@ -232,14 +264,14 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
     startY: y,
     head: [["Earnings", "Monthly", "Yearly"]],
     body: [
-      ["Basic Salary", fmtCurrency(data.salary.basicSalary), fmtCurrency(data.salary.yearlyBasic)],
-      ["HRA", fmtCurrency(data.salary.hra), fmtCurrency(data.salary.yearlyHra)],
-      ["Other Allowances", fmtCurrency(data.salary.otherAllowances), fmtCurrency(data.salary.yearlyOtherAllowances)],
+      ["Basic Salary", fmtCurrency(basicSalary), fmtCurrency(yearlyBasic)],
+      ["HRA", fmtCurrency(hra), fmtCurrency(yearlyHra)],
+      ["Other Allowances", fmtCurrency(otherAllowances), fmtCurrency(yearlyOtherAllowances)],
       ["Gross Earnings", fmtCurrency(grossMonthly), fmtCurrency(grossYearly)],
     ],
     theme: "grid",
     headStyles: {
-      fillColor: [30, 64, 175],
+      fillColor: [34, 34, 34],
       textColor: [255, 255, 255],
       fontStyle: "bold",
       halign: "center",
@@ -247,7 +279,7 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
     },
     bodyStyles: {
       fontSize: 9,
-      textColor: [15, 23, 42],
+      textColor: [51, 51, 51],
     },
     columnStyles: {
       0: { halign: "left", fontStyle: "bold" },
@@ -255,7 +287,7 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
       2: { halign: "right" },
     },
     alternateRowStyles: {
-      fillColor: [248, 250, 252],
+      fillColor: [245, 245, 245],
     },
     margin: { left: margin, right: margin },
   });
@@ -269,7 +301,7 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
     body: [["Gross Deductions", fmtCurrency(data.deductions || 0)]],
     theme: "grid",
     headStyles: {
-      fillColor: [185, 28, 28],
+      fillColor: [64, 64, 64],
       textColor: [255, 255, 255],
       fontStyle: "bold",
       halign: "center",
@@ -277,7 +309,7 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
     },
     bodyStyles: {
       fontSize: 9,
-      textColor: [15, 23, 42],
+      textColor: [51, 51, 51],
     },
     columnStyles: {
       0: { halign: "left", fontStyle: "bold" },
@@ -288,19 +320,20 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
 
   y = (doc as any).lastAutoTable.finalY + 8;
   doc.setFontSize(9);
-  doc.setTextColor(100, 116, 139);
+  doc.setTextColor(60, 60, 60);
   doc.text(fmtCurrency(data.netSalary || 0), pageWidth - margin - 20, y, { align: "right" });
 
   y += 14;
 
   // Net Pay Box
-  doc.setFillColor(240, 253, 244);
-  doc.setDrawColor(22, 163, 74);
-  doc.roundedRect(margin, y, pageWidth - margin * 2, 24, 2, 2, "FD");
+  // Net Pay box - use subtle grey background with dark text
+  doc.setFillColor(245, 245, 245);
+  doc.setDrawColor(160, 160, 160);
+  doc.roundedRect(margin, y, pageWidth - margin * 2, 28, 2, 2, "FD");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
-  doc.setTextColor(21, 128, 61);
+  doc.setTextColor(20, 20, 20);
   doc.text("NET PAY", margin + 5, y + 9);
 
   doc.setFontSize(14);
@@ -311,10 +344,20 @@ export async function generatePayslipPDF(data: PayslipData, fileName?: string, r
     { align: "right" }
   );
 
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(60, 60, 60);
+  doc.text(
+    `Yearly Net Pay: ${fmtCurrency(yearlyNetSalary)}`,
+    pageWidth - margin - 5,
+    y + 16,
+    { align: "right" }
+  );
+
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Amount in words: ${toWords(data.netSalary)}`, margin + 5, y + 18);
+  doc.setTextColor(71, 71, 71);
+  doc.text(`Amount in words: ${toWords(data.netSalary)}`, margin + 5, y + 23);
 
   // Footer
   doc.setDrawColor(203, 213, 225);

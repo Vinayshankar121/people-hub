@@ -43,11 +43,11 @@ ALTER TABLE public.leave_balance_history ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "leave_balance_history: self select" ON public.leave_balance_history FOR SELECT
   USING (auth.uid() = user_auth_uid);
 CREATE POLICY "leave_balance_history: admin select all" ON public.leave_balance_history FOR SELECT
-  USING (public.has_role(auth.uid(), 'Admin'));
+  USING (public.has_role(auth.uid(), 'Admin') OR public.has_role(auth.uid(), 'CEO'));
 CREATE POLICY "leave_balance_history: admin insert" ON public.leave_balance_history FOR INSERT
-  WITH CHECK (public.has_role(auth.uid(), 'Admin'));
+  WITH CHECK (public.has_role(auth.uid(), 'Admin') OR public.has_role(auth.uid(), 'CEO'));
 CREATE POLICY "leave_balance_history: admin delete" ON public.leave_balance_history FOR DELETE
-  USING (public.has_role(auth.uid(), 'Admin'));
+  USING (public.has_role(auth.uid(), 'Admin') OR public.has_role(auth.uid(), 'CEO'));
 
 -- Create RLS policies for leaves table if not exists
 DO $$ BEGIN
@@ -69,14 +69,14 @@ DO $$ BEGIN
     SELECT 1 FROM pg_policies WHERE tablename = 'leaves' AND policyname = 'leaves: admin select all'
   ) THEN
     CREATE POLICY "leaves: admin select all" ON public.leaves FOR SELECT
-      USING (public.has_role(auth.uid(), 'Admin'));
+      USING (public.has_role(auth.uid(), 'Admin') OR public.has_role(auth.uid(), 'CEO'));
   END IF;
   
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'leaves' AND policyname = 'leaves: admin update'
   ) THEN
     CREATE POLICY "leaves: admin update" ON public.leaves FOR UPDATE
-      USING (public.has_role(auth.uid(), 'Admin'));
+      USING (public.has_role(auth.uid(), 'Admin') OR public.has_role(auth.uid(), 'CEO'));
   END IF;
 END $$;
 

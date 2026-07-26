@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { LogIn, LogOut, Clock, Menu } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { initials, todayISO, calcHours } from "@/lib/hrms-utils";
+import { initials, todayISO, calcHours, getAttendanceStatusFromHours } from "@/lib/hrms-utils";
 import { useSidebar } from "./Sidebar";
 
 export function Navbar() {
@@ -31,15 +31,39 @@ export function Navbar() {
     if (profile?.role === "Employee") loadToday();
   }, [profile]);
 
+  // Auto-mark absent if employee checked in but forgot to check out by 18:30
+  const [autoMarkedAbsent, setAutoMarkedAbsent] = useState(false);
+  useEffect(() => {
+    if (!profile || profile.role !== "Employee") return;
+    if (!today) return;
+    const currentTimeStr = new Date().toTimeString().slice(0, 5);
+    if (today.punch_in_time && !today.punch_out_time && currentTimeStr >= "18:30" && !autoMarkedAbsent) {
+      // Mark the attendance as Absent (no checkout)
+      (async () => {
+        try {
+          await supabase
+            .from("attendance")
+            .update({ status: "Absent", total_hours: 0, punch_out_time: null, approval_status: "" })
+            .eq("user_auth_uid", profile.auth_uid)
+            .eq("date", todayISO());
+          setAutoMarkedAbsent(true);
+          loadToday();
+        } catch (err) {
+          // ignore errors silently
+        }
+      })();
+    }
+  }, [today, profile, autoMarkedAbsent]);
+
   const punchIn = async () => {
     if (!profile) return;
 
     const dateISO = todayISO();
     const day = new Date(dateISO + "T00:00:00").getDay();
-    const isWeekend = day === 0 || day === 6;
+    const isWeekend = day === 0;
 
     if (isWeekend) {
-      alert("Attendance is not allowed on weekends.");
+      alert("Attendance is not allowed on Sundays.");
       return;
     }
 
@@ -56,6 +80,11 @@ export function Navbar() {
     }
 
     const time = new Date().toTimeString().slice(0, 5);
+    if (time < "09:00" || time > "09:15") {
+      alert("Punch In is only allowed between 9:00 AM and 9:15 AM.");
+      return;
+    }
+
     await supabase.from("attendance").upsert(
       {
         user_auth_uid: profile.auth_uid,
@@ -74,10 +103,10 @@ export function Navbar() {
 
     const dateISO = todayISO();
     const day = new Date(dateISO + "T00:00:00").getDay();
-    const isWeekend = day === 0 || day === 6;
+    const isWeekend = day === 0;
 
     if (isWeekend) {
-      alert("Attendance is not allowed on weekends.");
+      alert("Attendance is not allowed on Sundays.");
       return;
     }
 
@@ -94,10 +123,18 @@ export function Navbar() {
     }
 
     const time = new Date().toTimeString().slice(0, 5);
+    // Disable punch out after 18:30
+    if (time >= "18:30") {
+      alert("Punch Out is disabled after 6:30 PM. Please contact Admin.");
+      return;
+    }
+
     const hours = calcHours(today.punch_in_time, time);
+    const status = getAttendanceStatusFromHours(hours);
+
     await supabase
       .from("attendance")
-      .update({ punch_out_time: time, total_hours: hours })
+      .update({ punch_out_time: time, total_hours: hours, status, approval_status: "Approved" })
       .eq("user_auth_uid", profile.auth_uid)
       .eq("date", todayISO());
     loadToday();
@@ -128,28 +165,42 @@ export function Navbar() {
 
       {/* Right: punch buttons + avatar */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {profile?.role === "Employee" && (
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <button
-              onClick={punchIn}
-              disabled={!!today?.punch_in_time}
-              className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-emerald-600 text-white text-xs sm:text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <LogIn className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline">{today?.punch_in_time ? `In: ${today.punch_in_time}` : "Punch In"}</span>
-              <span className="xs:hidden">{today?.punch_in_time ? today.punch_in_time : "In"}</span>
-            </button>
-            <button
-              onClick={punchOut}
-              disabled={!today?.punch_in_time || !!today?.punch_out_time}
-              className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-rose-600 text-white text-xs sm:text-sm font-medium hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <LogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline">{today?.punch_out_time ? `Out: ${today.punch_out_time}` : "Punch Out"}</span>
-              <span className="xs:hidden">{today?.punch_out_time ? today.punch_out_time : "Out"}</span>
-            </button>
-          </div>
-        )}
+        {profile?.role === "Employee" && (() => {
+          const currentTimeStr = now.toTimeString().slice(0, 5);
+          const isBeforePunchIn = currentTimeStr < "09:00";
+          const isAfterPunchIn = currentTimeStr > "09:15";
+          const isExceeded = isAfterPunchIn && !today?.punch_in_time;
+
+          return (
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              {isExceeded && (
+                <span className="text-xs text-rose-600 font-medium bg-rose-50 border border-rose-100 px-3 py-1.5 rounded-xl">
+                  Check-in time exceeded. Please contact Admin.
+                </span>
+              )}
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <button
+                  onClick={punchIn}
+                  disabled={!!today?.punch_in_time || isBeforePunchIn || isAfterPunchIn}
+                  className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-emerald-600 text-white text-xs sm:text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <LogIn className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">{today?.punch_in_time ? `In: ${today.punch_in_time}` : "Punch In"}</span>
+                  <span className="xs:hidden">{today?.punch_in_time ? today.punch_in_time : "In"}</span>
+                </button>
+                <button
+                  onClick={punchOut}
+                  disabled={!today?.punch_in_time || !!today?.punch_out_time || currentTimeStr >= "18:30"}
+                  className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-rose-600 text-white text-xs sm:text-sm font-medium hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <LogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">{today?.punch_out_time ? `Out: ${today.punch_out_time}` : "Punch Out"}</span>
+                  <span className="xs:hidden">{today?.punch_out_time ? today.punch_out_time : "Out"}</span>
+                </button>
+              </div>
+            </div>
+          );
+        })()}
         <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-brand grid place-items-center text-xs sm:text-sm font-semibold text-white shrink-0">
           {initials(profile?.name)}
         </div>

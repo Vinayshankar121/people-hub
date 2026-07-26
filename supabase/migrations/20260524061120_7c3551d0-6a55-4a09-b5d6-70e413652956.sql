@@ -1,8 +1,25 @@
 -- ============ ENUM + helper function ============
-CREATE TYPE public.app_role AS ENUM ('Admin', 'Employee');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type WHERE typname = 'app_role'
+  ) THEN
+    CREATE TYPE public.app_role AS ENUM ('Admin', 'Employee');
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role') AND NOT EXISTS (
+    SELECT 1
+    FROM pg_enum
+    JOIN pg_type ON pg_enum.enumtypid = pg_type.oid
+    WHERE pg_type.typname = 'app_role'
+      AND pg_enum.enumlabel = 'CEO'
+  ) THEN
+    ALTER TYPE public.app_role ADD VALUE 'CEO';
+  END IF;
+END$$;
 
 -- ============ EMPLOYEES ============
-CREATE TABLE public.employees (
+CREATE TABLE IF NOT EXISTS public.employees (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   auth_uid UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   employee_id TEXT UNIQUE NOT NULL,
@@ -36,20 +53,27 @@ CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
 
+DROP TRIGGER IF EXISTS trg_employees_updated ON public.employees;
 CREATE TRIGGER trg_employees_updated BEFORE UPDATE ON public.employees
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
--- Employees RLS
+-- Employees RLS (idempotent)
+DROP POLICY IF EXISTS "Employees: self select" ON public.employees;
+DROP POLICY IF EXISTS "Employees: admin select all" ON public.employees;
+DROP POLICY IF EXISTS "Employees: admin insert" ON public.employees;
+DROP POLICY IF EXISTS "Employees: admin update" ON public.employees;
+DROP POLICY IF EXISTS "Employees: admin delete" ON public.employees;
 CREATE POLICY "Employees: self select" ON public.employees FOR SELECT
   USING (auth.uid() = auth_uid);
 CREATE POLICY "Employees: admin select all" ON public.employees FOR SELECT
-  USING (public.has_role(auth.uid(), 'Admin'));
+  USING (public.has_role(auth.uid(), 'Admin') OR public.has_role(auth.uid(), 'CEO'));
 CREATE POLICY "Employees: admin insert" ON public.employees FOR INSERT
-  WITH CHECK (public.has_role(auth.uid(), 'Admin'));
+  WITH CHECK (public.has_role(auth.uid(), 'Admin') OR public.has_role(auth.uid(), 'CEO'));
 CREATE POLICY "Employees: admin update" ON public.employees FOR UPDATE
-  USING (public.has_role(auth.uid(), 'Admin'));
+  USING (public.has_role(auth.uid(), 'Admin') OR public.has_role(auth.uid(), 'CEO'));
 CREATE POLICY "Employees: admin delete" ON public.employees FOR DELETE
-  USING (public.has_role(auth.uid(), 'Admin'));
+  USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
+
 
 -- Auto-create employee row on auth signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -76,12 +100,13 @@ BEGIN
   RETURN NEW;
 END; $$;
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- ============ HOLIDAYS ============
-CREATE TABLE public.holidays (
+CREATE TABLE IF NOT EXISTS public.holidays (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   date DATE UNIQUE NOT NULL,
   name TEXT NOT NULL,
@@ -90,16 +115,21 @@ CREATE TABLE public.holidays (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE public.holidays ENABLE ROW LEVEL SECURITY;
+DROP TRIGGER IF EXISTS trg_holidays_updated ON public.holidays;
 CREATE TRIGGER trg_holidays_updated BEFORE UPDATE ON public.holidays
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP POLICY IF EXISTS "Holidays: all auth read" ON public.holidays;
+DROP POLICY IF EXISTS "Holidays: admin insert" ON public.holidays;
+DROP POLICY IF EXISTS "Holidays: admin update" ON public.holidays;
+DROP POLICY IF EXISTS "Holidays: admin delete" ON public.holidays;
 CREATE POLICY "Holidays: all auth read" ON public.holidays FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Holidays: admin insert" ON public.holidays FOR INSERT WITH CHECK (public.has_role(auth.uid(),'Admin'));
-CREATE POLICY "Holidays: admin update" ON public.holidays FOR UPDATE USING (public.has_role(auth.uid(),'Admin'));
-CREATE POLICY "Holidays: admin delete" ON public.holidays FOR DELETE USING (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Holidays: admin insert" ON public.holidays FOR INSERT WITH CHECK (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
+CREATE POLICY "Holidays: admin update" ON public.holidays FOR UPDATE USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
+CREATE POLICY "Holidays: admin delete" ON public.holidays FOR DELETE USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
 
 -- ============ ATTENDANCE ============
-CREATE TABLE public.attendance (
+CREATE TABLE IF NOT EXISTS public.attendance (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_auth_uid UUID NOT NULL REFERENCES public.employees(auth_uid) ON DELETE CASCADE,
   date DATE NOT NULL,
@@ -121,18 +151,25 @@ CREATE TABLE public.attendance (
   UNIQUE (user_auth_uid, date)
 );
 ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
+DROP TRIGGER IF EXISTS trg_attendance_updated ON public.attendance;
 CREATE TRIGGER trg_attendance_updated BEFORE UPDATE ON public.attendance
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP POLICY IF EXISTS "Att: self select" ON public.attendance;
+DROP POLICY IF EXISTS "Att: admin select" ON public.attendance;
+DROP POLICY IF EXISTS "Att: self insert" ON public.attendance;
+DROP POLICY IF EXISTS "Att: admin insert" ON public.attendance;
+DROP POLICY IF EXISTS "Att: self update" ON public.attendance;
+DROP POLICY IF EXISTS "Att: admin update" ON public.attendance;
 CREATE POLICY "Att: self select" ON public.attendance FOR SELECT USING (auth.uid() = user_auth_uid);
-CREATE POLICY "Att: admin select" ON public.attendance FOR SELECT USING (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Att: admin select" ON public.attendance FOR SELECT USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
 CREATE POLICY "Att: self insert" ON public.attendance FOR INSERT WITH CHECK (auth.uid() = user_auth_uid);
-CREATE POLICY "Att: admin insert" ON public.attendance FOR INSERT WITH CHECK (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Att: admin insert" ON public.attendance FOR INSERT WITH CHECK (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
 CREATE POLICY "Att: self update" ON public.attendance FOR UPDATE USING (auth.uid() = user_auth_uid);
-CREATE POLICY "Att: admin update" ON public.attendance FOR UPDATE USING (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Att: admin update" ON public.attendance FOR UPDATE USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
 
 -- ============ LEAVES ============
-CREATE TABLE public.leaves (
+CREATE TABLE IF NOT EXISTS public.leaves (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_auth_uid UUID NOT NULL REFERENCES public.employees(auth_uid) ON DELETE CASCADE,
   start_date DATE NOT NULL,
@@ -145,16 +182,21 @@ CREATE TABLE public.leaves (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE public.leaves ENABLE ROW LEVEL SECURITY;
+DROP TRIGGER IF EXISTS trg_leaves_updated ON public.leaves;
 CREATE TRIGGER trg_leaves_updated BEFORE UPDATE ON public.leaves
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP POLICY IF EXISTS "Leaves: self select" ON public.leaves;
+DROP POLICY IF EXISTS "Leaves: admin select" ON public.leaves;
+DROP POLICY IF EXISTS "Leaves: self insert" ON public.leaves;
+DROP POLICY IF EXISTS "Leaves: admin update" ON public.leaves;
 CREATE POLICY "Leaves: self select" ON public.leaves FOR SELECT USING (auth.uid() = user_auth_uid);
-CREATE POLICY "Leaves: admin select" ON public.leaves FOR SELECT USING (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Leaves: admin select" ON public.leaves FOR SELECT USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
 CREATE POLICY "Leaves: self insert" ON public.leaves FOR INSERT WITH CHECK (auth.uid() = user_auth_uid);
-CREATE POLICY "Leaves: admin update" ON public.leaves FOR UPDATE USING (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Leaves: admin update" ON public.leaves FOR UPDATE USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
 
 -- ============ PAYROLL ============
-CREATE TABLE public.payroll (
+CREATE TABLE IF NOT EXISTS public.payroll (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_auth_uid UUID NOT NULL REFERENCES public.employees(auth_uid) ON DELETE CASCADE,
   month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
@@ -173,14 +215,17 @@ CREATE TABLE public.payroll (
   UNIQUE (user_auth_uid, month, year)
 );
 ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY;
+DROP TRIGGER IF EXISTS trg_payroll_updated ON public.payroll;
 CREATE TRIGGER trg_payroll_updated BEFORE UPDATE ON public.payroll
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP POLICY IF EXISTS "Payroll: self select" ON public.payroll;
+DROP POLICY IF EXISTS "Payroll: admin all" ON public.payroll;
 CREATE POLICY "Payroll: self select" ON public.payroll FOR SELECT USING (auth.uid() = user_auth_uid);
-CREATE POLICY "Payroll: admin all" ON public.payroll FOR ALL USING (public.has_role(auth.uid(),'Admin')) WITH CHECK (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Payroll: admin all" ON public.payroll FOR ALL USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO')) WITH CHECK (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));
 
 -- ============ PAYSLIPS ============
-CREATE TABLE public.payslips (
+CREATE TABLE IF NOT EXISTS public.payslips (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   payroll_id UUID UNIQUE REFERENCES public.payroll(id) ON DELETE CASCADE,
   user_auth_uid UUID NOT NULL REFERENCES public.employees(auth_uid) ON DELETE CASCADE,
@@ -190,8 +235,11 @@ CREATE TABLE public.payslips (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE public.payslips ENABLE ROW LEVEL SECURITY;
+DROP TRIGGER IF EXISTS trg_payslips_updated ON public.payslips;
 CREATE TRIGGER trg_payslips_updated BEFORE UPDATE ON public.payslips
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP POLICY IF EXISTS "Payslips: self select" ON public.payslips;
+DROP POLICY IF EXISTS "Payslips: admin all" ON public.payslips;
 CREATE POLICY "Payslips: self select" ON public.payslips FOR SELECT USING (auth.uid() = user_auth_uid);
-CREATE POLICY "Payslips: admin all" ON public.payslips FOR ALL USING (public.has_role(auth.uid(),'Admin')) WITH CHECK (public.has_role(auth.uid(),'Admin'));
+CREATE POLICY "Payslips: admin all" ON public.payslips FOR ALL USING (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO')) WITH CHECK (public.has_role(auth.uid(),'Admin') OR public.has_role(auth.uid(),'CEO'));

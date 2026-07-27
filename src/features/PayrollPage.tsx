@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { Wallet, FileDown, Eye } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Modal } from "@/components/hrms/Modal";
 import { Badge } from "@/components/hrms/Badge";
 import { fmtMoney, initials } from "@/lib/hrms-utils";
-import { previewPayroll, generatePayroll } from "@/lib/admin.functions";
+import { previewPayroll, generatePayroll, getAttendanceSummaryForPeriod } from "@/lib/admin.functions";
 import { generatePayslipPDF } from "@/lib/payslip";
 import { toast } from "sonner";
 
@@ -19,10 +20,10 @@ type PayrollRow = {
   yearlySalary: number;
   basicSalary: number;
   hra: number;
-  other_allowances: number;
-  yearly_basic: number;
-  yearly_hra: number;
-  yearly_other_allowances: number;
+  otherAllowances: number;
+  yearlyBasic: number;
+  yearlyHra: number;
+  yearlyOtherAllowances: number;
 
   workingDays: number;
   presentDays: number;
@@ -33,6 +34,8 @@ type PayrollRow = {
   netSalary: number;
   paid_leaves_used?: number;
   unpaid_leave_days?: number;
+  appraisalApplied?: boolean;
+  appraisalEffectiveFrom?: string;
   status: string;
 
   employee_id?: string;
@@ -63,6 +66,8 @@ type PreviewRow = {
   absentDays: number;
   deductions: number;
   netSalary: number;
+  appraisalApplied?: boolean;
+  appraisalEffectiveFrom?: string;
 };
 
 type PayslipHistoryRow = {
@@ -84,7 +89,7 @@ export function PayrollPage() {
 
   if (!profile) return null;
 
-  return profile.role === "Admin"
+  return profile.role === "Admin" || profile.role === "CEO"
     ? <AdminPayroll />
     : <EmployeePayroll profile={profile} />;
 }
@@ -245,7 +250,13 @@ function AdminPayroll() {
                   {preview.map((p) => (
                     <tr key={p.auth_uid} className="border-b last:border-0">
                       <td className="px-4 py-2.5 font-medium">
-                        {p.name}
+                        <Link
+                          to="/attendance"
+                          search={{ employee: p.auth_uid, month: month.toString(), year: year.toString() }}
+                          className="text-brand hover:underline"
+                        >
+                          {p.name}
+                        </Link>
                         <span className="text-xs text-slate-400"> ({p.employee_id})</span>
                       </td>
                       <td className="px-4 py-2.5">{fmtMoney(p.basicSalary)}</td>
@@ -367,11 +378,11 @@ function EmployeePayroll({ profile }: { profile: any }) {
   useEffect(() => {
     const loadEmployeePayroll = async () => {
       const { data, error } = await supabase
-  .from("payroll_with_employee_details")
-  .select("*")
-  .filter("user_auth_uid", "eq", profile.auth_uid)
-  .order("year", { ascending: false })
-  .order("month", { ascending: false });
+        .from("payroll_with_employee_details")
+        .select("*")
+        .filter("user_auth_uid", "eq", profile.auth_uid)
+        .order("year", { ascending: false })
+        .order("month", { ascending: false });
       if (error) {
         toast.error(error.message);
         return;
@@ -502,6 +513,27 @@ function PayrollTable({
     try {
       const filename = `${eid || authUid || 'emp'}-payslip-${row.year}-${row.month}.pdf`;
 
+      // Fetch dynamic attendance summary to ensure it matches calculations
+      let attSummary = {
+        workingDays: Number(row.workingDays || 0),
+        presentDays: Number(row.presentDays || 0),
+        halfDays: 0,
+        approvedLeaves: Number(row.approvedLeaves || 0),
+        paidLeaves: Number(row.paid_leaves_used || 0),
+        unpaidLeaves: Number(row.unpaid_leave_days || 0),
+        absentDays: Number(row.absentDays || 0),
+        holidays: Number(row.holidays || 0),
+      };
+
+      try {
+        const summary = await getAttendanceSummaryForPeriod(authUid, row.month, row.year);
+        if (summary) {
+          attSummary = summary;
+        }
+      } catch (summaryErr) {
+        console.error("Failed to load live attendance summary, using row values:", summaryErr);
+      }
+
       const blob = await generatePayslipPDF({
         month: row.month,
         year: row.year,
@@ -524,29 +556,23 @@ function PayrollTable({
         },
 
         salary: {
-          monthlySalary: Number(row.monthlySalary || 0),
-          yearlySalary: Number(row.yearlySalary || 0),
-          basicSalary: Number(row.basicSalary || 0),
-          hra: Number(row.hra || 0),
-          otherAllowances: Number(row.other_allowances || 0),
-          yearlyBasic: Number(row.yearly_basic || 0),
-          yearlyHra: Number(row.yearly_hra || 0),
-          yearlyOtherAllowances: Number(row.yearly_other_allowances || 0),
+          monthlySalary: Number(row.monthlySalary || row.monthlysalary || row.salary || 0),
+          yearlySalary: Number(row.yearlySalary || row.yearlysalary || Math.round((Number(row.monthlySalary || row.monthlysalary || row.salary || 0) * 12) * 100) / 100 || 0),
+          basicSalary: Number(row.basicSalary || row.basicsalary || Math.round((Number(row.monthlySalary || row.monthlysalary || row.salary || 0) * 0.5) * 100) / 100 || 0),
+          hra: Number(row.hra || Math.round((Number(row.monthlySalary || row.monthlysalary || row.salary || 0) * 0.3) * 100) / 100 || 0),
+          otherAllowances: Number(row.otherAllowances || row.otherallowances || Math.round((Number(row.monthlySalary || row.monthlysalary || row.salary || 0) * 0.2) * 100) / 100 || 0),
+          yearlyBasic: Number(row.yearlyBasic || row.yearlybasic || 0),
+          yearlyHra: Number(row.yearlyHra || row.yearlyhra || 0),
+          yearlyOtherAllowances: Number(row.yearlyOtherAllowances || row.yearlyotherallowances || 0),
         },
 
-        attendance: {
-          workingDays: Number(row.workingDays || 0),
-          presentDays: Number(row.presentDays || 0),
-          absentDays: Number(row.absentDays || 0),
-          approvedLeaves: Number(row.approvedLeaves || 0),
-          paidLeaves: Number(row.paid_leaves_used || 0),
-          unpaidLeaves: Number(row.unpaid_leave_days || 0),
-          holidays: Number(row.holidays || 0),
-        },
+        attendance: attSummary,
 
         deductions: Number(row.deductions || 0),
         netSalary: Number(row.netSalary || 0),
         status: row.status || "Paid",
+        appraisalApplied: Boolean(row.appraisalApplied),
+        appraisalEffectiveFrom: row.appraisalEffectiveFrom || "",
       }, filename, true as any);
 
       if (blob) {
@@ -588,7 +614,7 @@ function PayrollTable({
             payroll_id: payrollId,
             user_auth_uid: authUid,
             pdf_path: path,
-            pdfUrl,
+            pdfUrl: publicUrl,
           };
 
           let saveError = null as any;

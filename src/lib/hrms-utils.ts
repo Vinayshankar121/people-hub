@@ -14,6 +14,7 @@ export const STATUS_COLOR: Record<string, string> = {
   Absent: "bg-rose-100 text-rose-700",
   Leave: "bg-amber-100 text-amber-700",
   Holiday: "bg-emerald-100 text-emerald-700",
+  Weekend: "bg-purple-100 text-purple-700 border border-purple-200",
   "Half Day": "bg-indigo-100 text-indigo-700",
   Pending: "bg-amber-100 text-amber-700",
   Approved: "bg-emerald-100 text-emerald-700",
@@ -69,5 +70,6 @@ export function eachDateInRange(start: string, end: string) {
 
 export function isWeekend(iso: string) {
   const day = new Date(iso).getDay();
-  return day === 0 || day === 6;
+  return day === 0;
 }
+

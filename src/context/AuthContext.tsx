@@ -13,7 +13,7 @@ export type EmployeeProfile = {
   joiningDate: string | null;
   salary: number;
   phone: string;
-  role: "Admin" | "Employee";
+  role: "Admin" | "Employee" | "CEO";
   profileImage: string;
 };
 

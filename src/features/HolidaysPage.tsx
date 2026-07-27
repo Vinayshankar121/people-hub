@@ -15,7 +15,7 @@ type Holiday = {
 
 export function HolidaysPage() {
   const { profile } = useAuth();
-  const isAdmin = profile?.role === "Admin";
+  const isAdmin = profile?.role === "Admin" || profile?.role === "CEO";
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ name: "", date: "", type: "National" });

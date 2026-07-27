@@ -3,6 +3,7 @@ import {
   Outlet, Link, createRootRouteWithContext, useRouter,
 } from "@tanstack/react-router";
 import { AuthProvider } from "@/context/AuthContext";
+import { SettingsProvider } from "@/context/SettingsContext";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -42,8 +43,10 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Outlet />
-        <Toaster richColors position="top-right" />
+        <SettingsProvider>
+          <Outlet />
+          <Toaster richColors position="top-right" />
+        </SettingsProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

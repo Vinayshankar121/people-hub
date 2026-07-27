@@ -8,8 +8,8 @@ ALTER TABLE public.payroll
   ADD COLUMN IF NOT EXISTS "yearlyHra" NUMERIC NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS "yearlyOtherAllowances" NUMERIC NOT NULL DEFAULT 0;
 
--- Create VIEW for payroll with employee details (read-only)
-CREATE OR REPLACE VIEW public.payroll_with_employee_details AS
+DROP VIEW IF EXISTS public.payroll_with_employee_details;
+CREATE VIEW public.payroll_with_employee_details AS
 SELECT 
   p.id,
   p.user_auth_uid,

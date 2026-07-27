@@ -9,44 +9,26 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as PayrollRouteImport } from './routes/payroll'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as LeavesRouteImport } from './routes/leaves'
-import { Route as HolidaysRouteImport } from './routes/holidays'
-import { Route as EmployeesRouteImport } from './routes/employees'
-import { Route as CalendarRouteImport } from './routes/calendar'
-import { Route as AttendanceRouteImport } from './routes/attendance'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppraisalsRouteImport } from './routes/appraisals'
+import { Route as AttendanceRouteImport } from './routes/attendance'
+import { Route as CalendarRouteImport } from './routes/calendar'
+import { Route as EmployeesRouteImport } from './routes/employees'
+import { Route as HolidaysRouteImport } from './routes/holidays'
+import { Route as LeavesRouteImport } from './routes/leaves'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as PayrollRouteImport } from './routes/payroll'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as AdminCalendarRouteImport } from './routes/admin/calendar'
 
-const PayrollRoute = PayrollRouteImport.update({
-  id: '/payroll',
-  path: '/payroll',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LeavesRoute = LeavesRouteImport.update({
-  id: '/leaves',
-  path: '/leaves',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HolidaysRoute = HolidaysRouteImport.update({
-  id: '/holidays',
-  path: '/holidays',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EmployeesRoute = EmployeesRouteImport.update({
-  id: '/employees',
-  path: '/employees',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CalendarRoute = CalendarRouteImport.update({
-  id: '/calendar',
-  path: '/calendar',
+const AppraisalsRoute = AppraisalsRouteImport.update({
+  id: '/appraisals',
+  path: '/appraisals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AttendanceRoute = AttendanceRouteImport.update({
@@ -54,9 +36,39 @@ const AttendanceRoute = AttendanceRouteImport.update({
   path: '/attendance',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const CalendarRoute = CalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmployeesRoute = EmployeesRouteImport.update({
+  id: '/employees',
+  path: '/employees',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HolidaysRoute = HolidaysRouteImport.update({
+  id: '/holidays',
+  path: '/holidays',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeavesRoute = LeavesRouteImport.update({
+  id: '/leaves',
+  path: '/leaves',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PayrollRoute = PayrollRouteImport.update({
+  id: '/payroll',
+  path: '/payroll',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminCalendarRoute = AdminCalendarRouteImport.update({
@@ -67,6 +79,7 @@ const AdminCalendarRoute = AdminCalendarRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/appraisals': typeof AppraisalsRoute
   '/attendance': typeof AttendanceRoute
   '/calendar': typeof CalendarRoute
   '/employees': typeof EmployeesRoute
@@ -74,10 +87,12 @@ export interface FileRoutesByFullPath {
   '/leaves': typeof LeavesRoute
   '/login': typeof LoginRoute
   '/payroll': typeof PayrollRoute
+  '/settings': typeof SettingsRoute
   '/admin/calendar': typeof AdminCalendarRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/appraisals': typeof AppraisalsRoute
   '/attendance': typeof AttendanceRoute
   '/calendar': typeof CalendarRoute
   '/employees': typeof EmployeesRoute
@@ -85,11 +100,13 @@ export interface FileRoutesByTo {
   '/leaves': typeof LeavesRoute
   '/login': typeof LoginRoute
   '/payroll': typeof PayrollRoute
+  '/settings': typeof SettingsRoute
   '/admin/calendar': typeof AdminCalendarRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/appraisals': typeof AppraisalsRoute
   '/attendance': typeof AttendanceRoute
   '/calendar': typeof CalendarRoute
   '/employees': typeof EmployeesRoute
@@ -97,12 +114,14 @@ export interface FileRoutesById {
   '/leaves': typeof LeavesRoute
   '/login': typeof LoginRoute
   '/payroll': typeof PayrollRoute
+  '/settings': typeof SettingsRoute
   '/admin/calendar': typeof AdminCalendarRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/appraisals'
     | '/attendance'
     | '/calendar'
     | '/employees'
@@ -110,10 +129,12 @@ export interface FileRouteTypes {
     | '/leaves'
     | '/login'
     | '/payroll'
+    | '/settings'
     | '/admin/calendar'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/appraisals'
     | '/attendance'
     | '/calendar'
     | '/employees'
@@ -121,10 +142,12 @@ export interface FileRouteTypes {
     | '/leaves'
     | '/login'
     | '/payroll'
+    | '/settings'
     | '/admin/calendar'
   id:
     | '__root__'
     | '/'
+    | '/appraisals'
     | '/attendance'
     | '/calendar'
     | '/employees'
@@ -132,11 +155,13 @@ export interface FileRouteTypes {
     | '/leaves'
     | '/login'
     | '/payroll'
+    | '/settings'
     | '/admin/calendar'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppraisalsRoute: typeof AppraisalsRoute
   AttendanceRoute: typeof AttendanceRoute
   CalendarRoute: typeof CalendarRoute
   EmployeesRoute: typeof EmployeesRoute
@@ -144,51 +169,24 @@ export interface RootRouteChildren {
   LeavesRoute: typeof LeavesRoute
   LoginRoute: typeof LoginRoute
   PayrollRoute: typeof PayrollRoute
+  SettingsRoute: typeof SettingsRoute
   AdminCalendarRoute: typeof AdminCalendarRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/payroll': {
-      id: '/payroll'
-      path: '/payroll'
-      fullPath: '/payroll'
-      preLoaderRoute: typeof PayrollRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/leaves': {
-      id: '/leaves'
-      path: '/leaves'
-      fullPath: '/leaves'
-      preLoaderRoute: typeof LeavesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/holidays': {
-      id: '/holidays'
-      path: '/holidays'
-      fullPath: '/holidays'
-      preLoaderRoute: typeof HolidaysRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/employees': {
-      id: '/employees'
-      path: '/employees'
-      fullPath: '/employees'
-      preLoaderRoute: typeof EmployeesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/calendar': {
-      id: '/calendar'
-      path: '/calendar'
-      fullPath: '/calendar'
-      preLoaderRoute: typeof CalendarRouteImport
+    '/appraisals': {
+      id: '/appraisals'
+      path: '/appraisals'
+      fullPath: '/appraisals'
+      preLoaderRoute: typeof AppraisalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/attendance': {
@@ -198,11 +196,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AttendanceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/calendar': {
+      id: '/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof CalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/employees': {
+      id: '/employees'
+      path: '/employees'
+      fullPath: '/employees'
+      preLoaderRoute: typeof EmployeesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/holidays': {
+      id: '/holidays'
+      path: '/holidays'
+      fullPath: '/holidays'
+      preLoaderRoute: typeof HolidaysRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leaves': {
+      id: '/leaves'
+      path: '/leaves'
+      fullPath: '/leaves'
+      preLoaderRoute: typeof LeavesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/payroll': {
+      id: '/payroll'
+      path: '/payroll'
+      fullPath: '/payroll'
+      preLoaderRoute: typeof PayrollRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/calendar': {
@@ -217,6 +257,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppraisalsRoute: AppraisalsRoute,
   AttendanceRoute: AttendanceRoute,
   CalendarRoute: CalendarRoute,
   EmployeesRoute: EmployeesRoute,
@@ -224,6 +265,7 @@ const rootRouteChildren: RootRouteChildren = {
   LeavesRoute: LeavesRoute,
   LoginRoute: LoginRoute,
   PayrollRoute: PayrollRoute,
+  SettingsRoute: SettingsRoute,
   AdminCalendarRoute: AdminCalendarRoute,
 }
 export const routeTree = rootRouteImport

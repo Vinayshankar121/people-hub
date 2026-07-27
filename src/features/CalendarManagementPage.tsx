@@ -31,9 +31,9 @@ type CalendarConfig = {
 
 export function CalendarManagementPage() {
   const { profile } = useAuth();
-  const isAdmin = profile?.role === "Admin";
+  const isAdmin = profile?.role === "Admin" || profile?.role === "CEO";
 
-  if (!isAdmin) return <div className="p-6 text-center text-slate-500">Admin access required</div>;
+  if (!isAdmin) return <div className="p-6 text-center text-slate-500">Admin/CEO access required</div>;
 
   return (
     <div className="space-y-8 max-w-7xl">
@@ -263,11 +263,10 @@ function AdminCalendarDashboard() {
               <button
                 key={cat}
                 onClick={() => setFilter(cat)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  filter === cat
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${filter === cat
                     ? "bg-brand text-white"
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                }`}
+                  }`}
               >
                 {cat}
               </button>
@@ -302,8 +301,8 @@ function AdminCalendarDashboard() {
                     </td>
                     <td className="px-6 py-3 text-slate-600">{h.description || "—"}</td>
                     <td className="px-6 py-3">
-                      {h.is_optional && <Badge label="Optional" color="purple" />}
-                      {h.is_full_day && <Badge label="Full Day" color="blue" />}
+                      {h.is_optional && <Badge variant="purple">Optional</Badge>}
+                      {h.is_full_day && <Badge variant="info">Full Day</Badge>}
                     </td>
                     <td className="px-6 py-3">
                       <div className="flex gap-2">

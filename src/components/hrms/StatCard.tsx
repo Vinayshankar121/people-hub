@@ -16,16 +16,34 @@ export function StatCard({
   icon: Icon,
   color = "blue",
   subtext,
+  onClick,
 }: {
   title: string;
   value: string | number;
   icon: LucideIcon;
   color?: Color;
   subtext?: string;
+  onClick?: () => void;
 }) {
   const c = COLOR_MAP[color];
+  const interactiveCls = onClick
+    ? "cursor-pointer hover:shadow-md hover:scale-[1.02] active:scale-[0.98] hover:border-slate-300 transition-all border border-transparent"
+    : "";
+
   return (
-    <div className={`rounded-2xl ${c.bg} ring-1 ${c.ring} p-3 sm:p-5 flex items-start gap-3 sm:gap-4`}>
+    <div
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      className={`rounded-2xl ${c.bg} ring-1 ${c.ring} p-3 sm:p-5 flex items-start gap-3 sm:gap-4 ${interactiveCls}`}
+    >
       <div className={`h-9 w-9 sm:h-12 sm:w-12 rounded-lg sm:rounded-xl grid place-items-center shrink-0 ${c.icon}`}>
         <Icon className="h-4 w-4 sm:h-6 sm:w-6" />
       </div>

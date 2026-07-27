@@ -29,7 +29,7 @@ export function AppShell({
   }
 
   if (!session) return <Navigate to="/login" />;
-  if (adminOnly && profile?.role !== "Admin") return <Navigate to="/" />;
+  if (adminOnly && profile?.role !== "Admin" && profile?.role !== "CEO") return <Navigate to="/" />;
 
   return (
     <SidebarProvider>

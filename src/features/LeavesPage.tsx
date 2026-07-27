@@ -29,7 +29,7 @@ function dayCount(start: string, end: string) {
 export function LeavesPage() {
   const { profile } = useAuth();
   if (!profile) return null;
-  return profile.role === "Admin" ? <AdminLeaves /> : <EmployeeLeaves profile={profile} />;
+  return profile.role === "Admin" || profile.role === "CEO" ? <AdminLeaves /> : <EmployeeLeaves profile={profile} />;
 }
 
 /* ─── Admin View ─── */

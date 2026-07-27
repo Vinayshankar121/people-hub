@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Users, Plus, Pencil, Trash2, Search } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/integrations/supabase/client.admin";
 import { Modal } from "@/components/hrms/Modal";
 import { Badge } from "@/components/hrms/Badge";
 import { DEPARTMENTS, fmtDate, fmtMoney, initials } from "@/lib/hrms-utils";
@@ -19,7 +20,9 @@ type Employee = {
   joiningDate: string | null;
   salary: number;
   phone: string;
-  role: "Admin" | "Employee";
+  role: "Admin" | "Employee" | "CEO";
+  status?: "Active" | "Inactive";
+  is_active?: boolean;
 
   date_of_birth?: string | null;
   bank_name?: string;
@@ -28,7 +31,6 @@ type Employee = {
   location?: string;
   pf_no?: string;
   universal_account_number?: string;
-  
 };
 
 const EMPTY_FORM = {
@@ -41,7 +43,8 @@ const EMPTY_FORM = {
   salary: 0,
   joiningDate: new Date().toISOString().slice(0, 10),
   phone: "",
-  role: "Employee" as "Admin" | "Employee",
+  role: "Employee" as "Admin" | "Employee" | "CEO",
+  status: "Active" as "Active" | "Inactive",
 
   date_of_birth: null as string | null,
   bank_name: "",
@@ -50,7 +53,11 @@ const EMPTY_FORM = {
   location: "",
   pf_no: "",
   universal_account_number: "",
- 
+};
+
+const getEmpStatus = (emp: Employee): "Active" | "Inactive" => {
+  if (emp.status === "Inactive" || emp.is_active === false) return "Inactive";
+  return "Active";
 };
 
 export function EmployeesPage() {
@@ -59,6 +66,7 @@ export function EmployeesPage() {
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("All");
   const [roleFilter, setRoleFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<Employee | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -66,9 +74,36 @@ export function EmployeesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-const load = async () => {
-    const { data } = await supabase.from("employees").select("*").order("created_at", { ascending: true });
-setEmployees((data ?? []) as unknown as any);
+  const load = async () => {
+    const { data: empData } = await supabase.from("employees").select("*").order("created_at", { ascending: true });
+
+    let authUsersMap = new Map<string, any>();
+    try {
+      const { data: authData } = await supabaseAdmin.auth.admin.listUsers();
+      if (authData?.users) {
+        authData.users.forEach((u) => authUsersMap.set(u.id, u));
+      }
+    } catch (e) {
+      console.warn("Could not fetch auth users for employee status:", e);
+    }
+
+    const merged = (empData ?? []).map((emp: any) => {
+      const authUser = emp.auth_uid ? authUsersMap.get(emp.auth_uid) : null;
+      const metadata = authUser?.user_metadata ?? {};
+      const isBanned = !!(authUser?.banned_until && new Date(authUser.banned_until) > new Date());
+
+      const status: "Active" | "Inactive" =
+        metadata.status ?? (isBanned ? "Inactive" : (emp.status === "Inactive" || emp.is_active === false ? "Inactive" : "Active"));
+      const is_active = metadata.is_active ?? (status === "Active" && !isBanned);
+
+      return {
+        ...emp,
+        status,
+        is_active,
+      };
+    });
+
+    setEmployees(merged as unknown as Employee[]);
   };
 
   useEffect(() => { load(); }, []);
@@ -79,9 +114,10 @@ setEmployees((data ?? []) as unknown as any);
       const matchSearch = !q || e.name.toLowerCase().includes(q) || e.employee_id.toLowerCase().includes(q) || e.email.toLowerCase().includes(q);
       const matchDept = deptFilter === "All" || e.department === deptFilter;
       const matchRole = roleFilter === "All" || e.role === roleFilter;
-      return matchSearch && matchDept && matchRole;
+      const matchStatus = statusFilter === "All" || getEmpStatus(e) === statusFilter;
+      return matchSearch && matchDept && matchRole && matchStatus;
     });
-  }, [employees, search, deptFilter, roleFilter]);
+  }, [employees, search, deptFilter, roleFilter, statusFilter]);
 
   const openAdd = () => {
     setEditTarget(null);
@@ -89,7 +125,7 @@ setEmployees((data ?? []) as unknown as any);
     setShowModal(true);
   };
 
-const openEdit = (emp: Employee) => {
+  const openEdit = (emp: Employee) => {
     setEditTarget(emp);
     setForm({
       ...EMPTY_FORM,
@@ -103,6 +139,7 @@ const openEdit = (emp: Employee) => {
       joiningDate: emp.joiningDate?.slice(0, 10) ?? "",
       phone: emp.phone,
       role: emp.role,
+      status: getEmpStatus(emp),
 
       date_of_birth: emp.date_of_birth ?? null,
       bank_name: emp.bank_name ?? "",
@@ -113,6 +150,38 @@ const openEdit = (emp: Employee) => {
       universal_account_number: emp.universal_account_number ?? "",
     });
     setShowModal(true);
+  };
+
+  const toggleStatus = async (emp: Employee) => {
+    if (!emp.auth_uid) return;
+    const currentStatus = getEmpStatus(emp);
+    const newStatus = currentStatus === "Active" ? "Inactive" : "Active";
+
+    // Optimistic UI update
+    setEmployees((prev) =>
+      prev.map((e) => (e.id === emp.id ? { ...e, status: newStatus, is_active: newStatus === "Active" } : e))
+    );
+
+    try {
+      await updateEmployee({
+        data: {
+          auth_uid: emp.auth_uid,
+          name: emp.name,
+          department: emp.department,
+          designation: emp.designation,
+          salary: emp.salary,
+          phone: emp.phone,
+          role: emp.role,
+          status: newStatus,
+          is_active: newStatus === "Active",
+        },
+      });
+      toast.success(`${emp.name} set to ${newStatus}`);
+      await load();
+    } catch (err: any) {
+      toast.error(err.message ?? "Status update failed");
+      await load();
+    }
   };
 
   const handleSave = async () => {
@@ -128,6 +197,8 @@ const openEdit = (emp: Employee) => {
             salary: form.salary,
             phone: form.phone,
             role: form.role,
+            status: form.status,
+            is_active: form.status === "Active",
             joiningDate: form.joiningDate || undefined,
             password: form.password || undefined,
 
@@ -155,6 +226,7 @@ const openEdit = (emp: Employee) => {
             joiningDate: form.joiningDate || undefined,
             phone: form.phone,
             role: form.role,
+            status: form.status,
 
             date_of_birth: form.date_of_birth || undefined,
             pan_no: form.pan_no,
@@ -191,7 +263,7 @@ const openEdit = (emp: Employee) => {
     }
   };
 
-  if (profile?.role !== "Admin") return null;
+  if (profile?.role !== "Admin" && profile?.role !== "CEO") return null;
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -225,7 +297,13 @@ const openEdit = (emp: Employee) => {
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="px-3 py-2.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
           <option value="All">All Roles</option>
           <option value="Admin">Admin</option>
+          <option value="CEO">CEO</option>
           <option value="Employee">Employee</option>
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3 py-2.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
+          <option value="All">All Statuses</option>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
         </select>
       </div>
 
@@ -238,6 +316,7 @@ const openEdit = (emp: Employee) => {
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Employee ID</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Employee</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Department & Role</th>
+                <th className="text-left px-5 py-3 font-medium text-slate-500">Status</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Phone</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Salary</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Date of Birth</th>
@@ -268,8 +347,22 @@ const openEdit = (emp: Employee) => {
                     <p className="text-slate-700">{emp.designation}</p>
                     <div className="flex items-center gap-1.5 mt-1">
                       <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">{emp.department}</span>
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${emp.role === "Admin" ? "bg-violet-50 text-violet-700" : "bg-slate-100 text-slate-600"}`}>{emp.role}</span>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${emp.role === "Admin" ? "bg-violet-50 text-violet-700" : emp.role === "CEO" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{emp.role}</span>
                     </div>
+                  </td>
+                  <td className="px-5 py-3">
+                    <button
+                      onClick={() => toggleStatus(emp)}
+                      title="Click to toggle Active / Inactive status"
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition cursor-pointer hover:scale-105 ${
+                        getEmpStatus(emp) === "Active"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                          : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${getEmpStatus(emp) === "Active" ? "bg-emerald-500" : "bg-rose-500"}`} />
+                      {getEmpStatus(emp)}
+                    </button>
                   </td>
                   <td className="px-5 py-3 text-slate-600">{emp.phone || "—"}</td>
                   <td className="px-5 py-3 font-medium text-slate-900">{fmtMoney(emp.salary)}</td>
@@ -297,7 +390,7 @@ const openEdit = (emp: Employee) => {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="text-center py-12 text-slate-500">
+                  <td colSpan={13} className="text-center py-12 text-slate-500">
                     <Users className="h-10 w-10 mx-auto text-slate-300 mb-2" />
                     No employees found
                   </td>
@@ -331,19 +424,35 @@ const openEdit = (emp: Employee) => {
           <Field label="Designation" required>
             <input value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="MERN Stack Lead" className="input-field" />
           </Field>
-          <Field label="Base Salary ($)" required>
+          <Field label="Base Salary (Rs.)" required>
             <input type="number" value={form.salary} onChange={(e) => setForm({ ...form, salary: Number(e.target.value) })} placeholder="75000" className="input-field" />
           </Field>
           <Field label="Joining Date" required>
             <input type="date" value={form.joiningDate} onChange={(e) => setForm({ ...form, joiningDate: e.target.value })} className="input-field" />
           </Field>
           <Field label="Phone">
-            <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 555-0150" className="input-field" />
+            <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+91 9876543210" className="input-field" />
           </Field>
           <Field label="Access Role" required>
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as "Admin" | "Employee" })} className="input-field">
+            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as "Admin" | "Employee" | "CEO" })} className="input-field">
               <option value="Employee">Employee</option>
+              <option value="CEO">CEO</option>
               <option value="Admin">Admin</option>
+            </select>
+          </Field>
+
+          <Field label="Account Status" required>
+            <select
+              value={form.status}
+              onChange={(e) => setForm({ ...form, status: e.target.value as "Active" | "Inactive" })}
+              className={`input-field font-semibold ${
+                form.status === "Active"
+                  ? "border-emerald-300 text-emerald-700 bg-emerald-50/40"
+                  : "border-rose-300 text-rose-700 bg-rose-50/40"
+              }`}
+            >
+              <option value="Active">Active (Can Login & Access App)</option>
+              <option value="Inactive">Inactive (Blocked from Login)</option>
             </select>
           </Field>
 

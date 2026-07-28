@@ -36,8 +36,56 @@ export function Navbar() {
     if (profile?.role === "Employee") loadToday();
   }, [profile]);
 
+  const isGpsRequired = profile?.gps_enabled !== false && settings.geo.enableGpsRestriction !== false;
+
+  const verifyGpsLocation = async () => {
+    if (!isGpsRequired) return null;
+    setLocating(true);
+    try {
+      toast.info("Verifying live GPS location for office geofence...");
+      const result = await getCurrentLocation(
+        settings.geo.officeLat,
+        settings.geo.officeLng,
+        settings.geo.allowedRadiusMeters
+      );
+
+      if (!result.isWithinRadius) {
+        const geoBlockMsg = "You are outside the office location. Please move within the permitted area.";
+        toast.error(geoBlockMsg);
+        alert(geoBlockMsg);
+        return false;
+      }
+      return result;
+    } catch (geoErr: any) {
+      const rawMsg = geoErr?.message || "";
+      let errorMsg = "Unable to detect your current location.";
+      if (rawMsg.toLowerCase().includes("permission")) {
+        errorMsg = "Location permission is required for attendance.";
+      } else if (
+        rawMsg.toLowerCase().includes("detect") ||
+        rawMsg.toLowerCase().includes("unavailable") ||
+        rawMsg.toLowerCase().includes("timed out") ||
+        rawMsg.toLowerCase().includes("supported")
+      ) {
+        errorMsg = "Unable to detect your current location.";
+      } else if (rawMsg) {
+        errorMsg = rawMsg;
+      }
+      toast.error(errorMsg);
+      alert(errorMsg);
+      return false;
+    } finally {
+      setLocating(false);
+    }
+  };
+
   const punchIn = async () => {
     if (!profile) return;
+    if (profile.is_active === false || profile.employment_status === "Inactive") {
+      toast.error("Attendance is disabled because your account is inactive.");
+      alert("Attendance is disabled because your account is inactive.");
+      return;
+    }
 
     const dateISO = todayISO();
     if (!isWorkingDay(dateISO)) {
@@ -55,32 +103,10 @@ export function Navbar() {
     }
 
     let locationResult: any = null;
-
-    if (settings.geo.enableGpsRestriction) {
-      setLocating(true);
-      try {
-        toast.info("Verifying live GPS location for office geo-fence...");
-        locationResult = await getCurrentLocation(
-          settings.geo.officeLat,
-          settings.geo.officeLng,
-          settings.geo.allowedRadiusMeters
-        );
-      } catch (geoErr: any) {
-        setLocating(false);
-        const errorMsg = geoErr?.message || "Failed to retrieve live location.";
-        toast.error(errorMsg);
-        alert(errorMsg);
-        return;
-      } finally {
-        setLocating(false);
-      }
-
-      if (!locationResult.isWithinRadius) {
-        const geoBlockMsg = `You are outside office location. Please be within ${settings.geo.allowedRadiusMeters} meters to check in.`;
-        toast.error(geoBlockMsg);
-        alert(geoBlockMsg);
-        return;
-      }
+    if (isGpsRequired) {
+      const gpsCheck = await verifyGpsLocation();
+      if (gpsCheck === false) return;
+      locationResult = gpsCheck;
     }
 
     try {
@@ -90,6 +116,7 @@ export function Navbar() {
         punch_in_time: time,
         status: "Present",
         approval_status: "Approved",
+        gps_enabled: isGpsRequired,
       };
 
       if (locationResult) {
@@ -97,6 +124,11 @@ export function Navbar() {
         payload.longitude = locationResult.longitude;
         payload.accuracy = locationResult.accuracy;
         payload.distance_meters = locationResult.distanceMeters;
+      } else {
+        payload.latitude = null;
+        payload.longitude = null;
+        payload.accuracy = null;
+        payload.distance_meters = null;
       }
 
       const { error: upsertErr } = await supabase.from("attendance").upsert(
@@ -119,9 +151,9 @@ export function Navbar() {
         if (fallbackErr) throw fallbackErr;
       }
 
-      const successMsg = settings.geo.enableGpsRestriction
-        ? `Punched In successfully! (${locationResult?.distanceMeters}m from office)`
-        : `Punched In successfully (WFH Allowed)`;
+      const successMsg = isGpsRequired && locationResult
+        ? `Punched In successfully! (${locationResult.distanceMeters}m from office)`
+        : `Punched In successfully!`;
       toast.success(successMsg);
       loadToday();
     } catch (err: any) {
@@ -132,6 +164,11 @@ export function Navbar() {
 
   const punchOut = async () => {
     if (!profile || !today?.punch_in_time) return;
+    if (profile.is_active === false || profile.employment_status === "Inactive") {
+      toast.error("Attendance is disabled because your account is inactive.");
+      alert("Attendance is disabled because your account is inactive.");
+      return;
+    }
 
     const dateISO = todayISO();
     if (!isWorkingDay(dateISO)) {
@@ -148,37 +185,15 @@ export function Navbar() {
     }
 
     let locationResult: any = null;
-
-    if (settings.geo.enableGpsRestriction) {
-      setLocating(true);
-      try {
-        toast.info("Verifying live GPS location for office geo-fence...");
-        locationResult = await getCurrentLocation(
-          settings.geo.officeLat,
-          settings.geo.officeLng,
-          settings.geo.allowedRadiusMeters
-        );
-      } catch (geoErr: any) {
-        setLocating(false);
-        const errorMsg = geoErr?.message || "Failed to retrieve live location.";
-        toast.error(errorMsg);
-        alert(errorMsg);
-        return;
-      } finally {
-        setLocating(false);
-      }
-
-      if (!locationResult.isWithinRadius) {
-        const geoBlockMsg = `Please check out from the office premises (within ${settings.geo.allowedRadiusMeters} meters).`;
-        toast.error(geoBlockMsg);
-        alert(geoBlockMsg);
-        return;
-      }
+    if (isGpsRequired) {
+      const gpsCheck = await verifyGpsLocation();
+      if (gpsCheck === false) return;
+      locationResult = gpsCheck;
     }
 
     const hours = calcHours(today.punch_in_time, time);
     let status = "Half Day";
-    if (today.punch_in_time <= "09:15" && time >= "18:00") {
+    if (today.punch_in_time <= (settings.attendance.lateThreshold || "09:15") && time >= (settings.attendance.endTime || "18:00")) {
       status = "Present";
     }
 
@@ -186,7 +201,9 @@ export function Navbar() {
       punch_out_time: time,
       total_hours: hours,
       status,
+      gps_enabled: isGpsRequired,
     };
+
     if (locationResult) {
       updatePayload.latitude = locationResult.latitude;
       updatePayload.longitude = locationResult.longitude;
@@ -232,9 +249,24 @@ export function Navbar() {
         </button>
 
         <div className="min-w-0">
-          <h1 className="text-sm sm:text-lg font-semibold text-slate-900 truncate">
-            Welcome, {profile?.name?.split(" ")[0] ?? "User"}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm sm:text-lg font-semibold text-slate-900 truncate">
+              Welcome, {profile?.name?.split(" ")[0] ?? "User"}
+            </h1>
+            {profile?.role === "Employee" && (
+              profile.gps_enabled !== false ? (
+                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0" title="GPS Verification Required">
+                  <MapPin className="h-3 w-3 text-emerald-500 shrink-0" />
+                  GPS: Enabled
+                </span>
+              ) : (
+                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 shrink-0" title="GPS Verification Disabled">
+                  <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                  GPS: Disabled
+                </span>
+              )
+            )}
+          </div>
           <p className="hidden sm:flex text-xs text-slate-500 items-center gap-1.5 mt-0.5">
             <Clock className="h-3 w-3" />
             {now.toLocaleString("en-US", {

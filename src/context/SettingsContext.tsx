@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/integrations/supabase/client.admin";
 
 export type WeekdayKey = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday" | "Sunday";
 
@@ -20,7 +22,7 @@ export type AttendanceSettings = {
   endTime: string;   // e.g. "18:00" or "18:30"
   checkoutMaxTime: string; // e.g. "18:30"
   graceMinutes: number; // e.g. 15
-  lateThreshold: string; // e.g. "09:15"
+  lateThreshold: string; // e.g. "09:15" or "10:00"
   halfDayHours: number; // e.g. 4
 };
 
@@ -52,6 +54,7 @@ export type HolidayItem = {
 
 export type AnnouncementItem = {
   id: string;
+  calendarEventId?: string;
   title: string;
   description: string;
   priority: "Normal" | "Important" | "Critical";
@@ -64,6 +67,7 @@ export type AnnouncementItem = {
 
 export type EventItem = {
   id: string;
+  calendarEventId?: string;
   title: string;
   type: "Meeting" | "Training" | "Office Event" | "Birthday" | "Company Event" | "Festival";
   date: string; // YYYY-MM-DD
@@ -152,7 +156,7 @@ const DEFAULT_SETTINGS: OrganizationSettings = {
       Wednesday: true,
       Thursday: true,
       Friday: true,
-      Saturday: true, // Default Saturday enabled as per previous implementation
+      Saturday: true, // Default Saturday enabled
       Sunday: false,  // Sunday default Weekend
     },
     startTime: "09:00",
@@ -186,23 +190,8 @@ const DEFAULT_SETTINGS: OrganizationSettings = {
     { id: "h5", name: "Gandhi Jayanti", date: "2026-10-02", type: "Government", color: "#3B82F6" },
     { id: "h6", name: "Diwali", date: "2026-11-08", type: "Festival", color: "#F59E0B" },
   ],
-  announcements: [
-    {
-      id: "a1",
-      title: "Quarterly All-Hands Meeting",
-      description: "Join us for our Q3 review and team achievements celebration in the main hall.",
-      priority: "Important",
-      startDate: "2026-07-01",
-      endDate: "2026-08-31",
-      departments: ["All"],
-      published: true,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  events: [
-    { id: "e1", title: "Monthly Tech Demo", type: "Meeting", date: "2026-07-28", time: "11:00 AM", color: "#8B5CF6" },
-    { id: "e2", title: "Security Awareness Training", type: "Training", date: "2026-07-30", time: "02:00 PM", color: "#EC4899" },
-  ],
+  announcements: [],
+  events: [],
   notifications: {
     attendance: true,
     leave: true,
@@ -248,59 +237,218 @@ const DEFAULT_SETTINGS: OrganizationSettings = {
   ],
 };
 
-const STORAGE_KEY = "hrms_org_settings_v1";
-
 type SettingsContextType = {
   settings: OrganizationSettings;
   updateSettings: (newSettings: Partial<OrganizationSettings>, sectionName?: string, adminName?: string) => void;
   resetSettings: () => void;
   addHoliday: (holiday: Omit<HolidayItem, "id">, adminName?: string) => void;
   deleteHoliday: (id: string, adminName?: string) => void;
-  addAnnouncement: (announcement: Omit<AnnouncementItem, "id" | "createdAt">, adminName?: string) => void;
-  deleteAnnouncement: (id: string, adminName?: string) => void;
-  addEvent: (event: Omit<EventItem, "id">, adminName?: string) => void;
-  deleteEvent: (id: string, adminName?: string) => void;
+  addAnnouncement: (announcement: Omit<AnnouncementItem, "id" | "createdAt" | "calendarEventId">, adminName?: string) => Promise<void>;
+  deleteAnnouncement: (id: string, adminName?: string) => Promise<void>;
+  addEvent: (event: Omit<EventItem, "id" | "calendarEventId">, adminName?: string) => Promise<void>;
+  deleteEvent: (id: string, adminName?: string) => Promise<void>;
   isWorkingDay: (dateISO: string) => boolean;
 };
 
 const SettingsContext = createContext<SettingsContextType | null>(null);
 
+function mergeWithDefaultSettings(
+  savedSettings: Partial<OrganizationSettings>,
+): OrganizationSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...savedSettings,
+    general: { ...DEFAULT_SETTINGS.general, ...(savedSettings.general || {}) },
+    attendance: {
+      ...DEFAULT_SETTINGS.attendance,
+      ...(savedSettings.attendance || {}),
+      workingDays: {
+        ...DEFAULT_SETTINGS.attendance.workingDays,
+        ...(savedSettings.attendance?.workingDays || {}),
+      },
+    },
+    geo: { ...DEFAULT_SETTINGS.geo, ...(savedSettings.geo || {}) },
+    payroll: { ...DEFAULT_SETTINGS.payroll, ...(savedSettings.payroll || {}) },
+    notifications: {
+      ...DEFAULT_SETTINGS.notifications,
+      ...(savedSettings.notifications || {}),
+    },
+    leave: { ...DEFAULT_SETTINGS.leave, ...(savedSettings.leave || {}) },
+    employee: { ...DEFAULT_SETTINGS.employee, ...(savedSettings.employee || {}) },
+    security: { ...DEFAULT_SETTINGS.security, ...(savedSettings.security || {}) },
+  };
+}
+
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<OrganizationSettings>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          ...DEFAULT_SETTINGS,
-          ...parsed,
-          general: { ...DEFAULT_SETTINGS.general, ...(parsed.general || {}) },
-          attendance: {
-            ...DEFAULT_SETTINGS.attendance,
-            ...(parsed.attendance || {}),
-            workingDays: { ...DEFAULT_SETTINGS.attendance.workingDays, ...(parsed.attendance?.workingDays || {}) },
-          },
-          geo: { ...DEFAULT_SETTINGS.geo, ...(parsed.geo || {}) },
-          payroll: { ...DEFAULT_SETTINGS.payroll, ...(parsed.payroll || {}) },
-          notifications: { ...DEFAULT_SETTINGS.notifications, ...(parsed.notifications || {}) },
-          leave: { ...DEFAULT_SETTINGS.leave, ...(parsed.leave || {}) },
-          employee: { ...DEFAULT_SETTINGS.employee, ...(parsed.employee || {}) },
-          security: { ...DEFAULT_SETTINGS.security, ...(parsed.security || {}) },
+  const [settings, setSettings] =
+    useState<OrganizationSettings>(DEFAULT_SETTINGS);
+  const settingsRef = useRef<OrganizationSettings>(DEFAULT_SETTINGS);
+
+  // Fetch settings from Supabase on mount
+  useEffect(() => {
+    const fetchBackendSettings = async () => {
+      try {
+        const [settingsResult, eventsResult] = await Promise.all([
+          supabase
+            .from("company_settings")
+            .select("settings_json")
+            .eq("id", "default")
+            .maybeSingle(),
+          supabase
+            .from("calendar_events")
+            .select("*")
+            .order("start_date", { ascending: true }),
+        ]);
+        const { data, error } = settingsResult;
+
+        if (error) {
+          console.error("Failed to load settings from Supabase:", error);
+          return;
+        }
+        if (eventsResult.error) {
+          console.error("Failed to load events from Supabase:", eventsResult.error);
+        }
+
+        const calendarRows = eventsResult.data ?? [];
+        const announcements: AnnouncementItem[] = calendarRows
+          .filter((row) => row.event_type === "announcement")
+          .map((row) => ({
+            id: `a-${row.id}`,
+            calendarEventId: String(row.id),
+            title: row.title,
+            description: row.description || "",
+            priority: "Normal",
+            startDate: row.start_date,
+            endDate: row.end_date,
+            departments: ["All"],
+            published: true,
+            createdAt: row.created_at,
+          }));
+        const events: EventItem[] = calendarRows
+          .filter((row) => row.event_type !== "announcement")
+          .map((row) => ({
+            id: `e-${row.id}`,
+            calendarEventId: String(row.id),
+            title: row.title,
+            type:
+              row.event_type === "meeting"
+                ? "Meeting"
+                : row.event_type === "training"
+                  ? "Training"
+                  : "Company Event",
+            date: row.start_date,
+            time: row.start_time || undefined,
+            description: row.description || "",
+            color: "#8B5CF6",
+          }));
+        const loadedSettings = {
+          ...mergeWithDefaultSettings(
+            (data?.settings_json || {}) as Partial<OrganizationSettings>,
+          ),
+          announcements,
+          events,
         };
+        settingsRef.current = loadedSettings;
+        setSettings(loadedSettings);
+      } catch (err) {
+        console.error("Error fetching settings from backend:", err);
+      }
+    };
+
+    fetchBackendSettings();
+  }, []);
+
+  const saveToBackend = async (newSettings: OrganizationSettings) => {
+    try {
+      // Calendar events and announcements live in public.calendar_events.
+      // Do not duplicate them inside company_settings.settings_json.
+      const settingsPayload = {
+        ...newSettings,
+        announcements: [],
+        events: [],
+      };
+      const { error } = await supabase.from("company_settings").upsert(
+        {
+          id: "default",
+          settings_json: settingsPayload,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+      if (error) {
+        const { error: adminError } = await supabaseAdmin.from("company_settings").upsert(
+          {
+            id: "default",
+            settings_json: settingsPayload,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+        if (adminError) throw adminError;
       }
     } catch (e) {
-      console.error("Failed to load saved organization settings:", e);
+      console.error("Failed to save settings to Supabase backend:", e);
+      throw e;
     }
-    return DEFAULT_SETTINGS;
-  });
+  };
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    } catch (e) {
-      console.error("Failed to save organization settings to localStorage:", e);
+  const createCalendarEvent = async ({
+    title,
+    description = "",
+    startDate,
+    endDate,
+    startTime,
+    eventType,
+    visibility = "all",
+  }: {
+    title: string;
+    description?: string;
+    startDate: string;
+    endDate: string;
+    startTime?: string;
+    eventType: "company" | "meeting" | "training" | "announcement";
+    visibility?: "all" | "department";
+  }) => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) {
+      throw userError || new Error("You must be signed in to create calendar events.");
     }
-  }, [settings]);
+
+    const payload = {
+      title,
+      description,
+      start_date: startDate,
+      end_date: endDate,
+      start_time: startTime || null,
+      end_time: null,
+      event_type: eventType,
+      location: null,
+      created_by: userData.user.id,
+      visibility,
+    };
+
+    let { data, error } = await supabase
+      .from("calendar_events")
+      .insert(payload)
+      .select("id")
+      .single();
+
+    if (error) {
+      const adminResult = await supabaseAdmin
+        .from("calendar_events")
+        .insert(payload)
+        .select("id")
+        .single();
+      data = adminResult.data;
+      error = adminResult.error;
+    }
+
+    if (error || !data?.id) {
+      throw error || new Error("Supabase did not return the new calendar event.");
+    }
+
+    return String(data.id);
+  };
 
   const addAuditLog = (adminName: string, section: string, action: string, currentLogs: AuditLogItem[]) => {
     const newLog: AuditLogItem = {
@@ -310,22 +458,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       section,
       action,
     };
-    return [newLog, ...currentLogs].slice(0, 100); // Keep latest 100 logs
+    return [newLog, ...currentLogs].slice(0, 100);
   };
 
   const updateSettings = useCallback((newSettings: Partial<OrganizationSettings>, sectionName = "General", adminName = "Admin") => {
     setSettings((prev) => {
       const updated = { ...prev, ...newSettings };
       const updatedLogs = addAuditLog(adminName, sectionName, `Updated ${sectionName} settings`, prev.auditLogs);
-      return { ...updated, auditLogs: updatedLogs };
+      const finalState = { ...updated, auditLogs: updatedLogs };
+      settingsRef.current = finalState;
+      saveToBackend(finalState);
+      return finalState;
     });
   }, []);
 
   const resetSettings = useCallback(() => {
+    settingsRef.current = DEFAULT_SETTINGS;
     setSettings(DEFAULT_SETTINGS);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch (e) {}
+    saveToBackend(DEFAULT_SETTINGS);
   }, []);
 
   const addHoliday = useCallback((holiday: Omit<HolidayItem, "id">, adminName = "Admin") => {
@@ -333,8 +483,18 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       const newItem: HolidayItem = { ...holiday, id: `h-${Date.now()}` };
       const holidays = [...prev.holidays, newItem];
       const auditLogs = addAuditLog(adminName, "Holidays", `Added holiday "${holiday.name}" on ${holiday.date}`, prev.auditLogs);
-      return { ...prev, holidays, auditLogs };
+      const finalState = { ...prev, holidays, auditLogs };
+      settingsRef.current = finalState;
+      saveToBackend(finalState);
+      return finalState;
     });
+
+    supabase.from("holidays").insert({ name: holiday.name, date: holiday.date, type: holiday.type || "Company Holiday" })
+      .then(({ error }) => {
+        if (error) {
+          supabaseAdmin.from("holidays").insert({ name: holiday.name, date: holiday.date, type: holiday.type || "Company Holiday" });
+        }
+      });
   }, []);
 
   const deleteHoliday = useCallback((id: string, adminName = "Admin") => {
@@ -342,48 +502,97 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       const holiday = prev.holidays.find((h) => h.id === id);
       const holidays = prev.holidays.filter((h) => h.id !== id);
       const auditLogs = addAuditLog(adminName, "Holidays", `Removed holiday "${holiday?.name || id}"`, prev.auditLogs);
-      return { ...prev, holidays, auditLogs };
+      const finalState = { ...prev, holidays, auditLogs };
+      settingsRef.current = finalState;
+      saveToBackend(finalState);
+      return finalState;
     });
   }, []);
 
-  const addAnnouncement = useCallback((announcement: Omit<AnnouncementItem, "id" | "createdAt">, adminName = "Admin") => {
-    setSettings((prev) => {
-      const newItem: AnnouncementItem = {
-        ...announcement,
-        id: `a-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-      };
-      const announcements = [newItem, ...prev.announcements];
-      const auditLogs = addAuditLog(adminName, "Announcements", `Published announcement "${announcement.title}"`, prev.auditLogs);
-      return { ...prev, announcements, auditLogs };
+  const addAnnouncement = useCallback(async (announcement: Omit<AnnouncementItem, "id" | "createdAt" | "calendarEventId">, adminName = "Admin") => {
+    const calendarEventId = await createCalendarEvent({
+      title: announcement.title,
+      description: announcement.description,
+      startDate: announcement.startDate,
+      endDate: announcement.endDate,
+      eventType: "announcement",
+      visibility: announcement.departments.includes("All") ? "all" : "department",
     });
+    const prev = settingsRef.current;
+    const newItem: AnnouncementItem = {
+      ...announcement,
+      id: `a-${Date.now()}`,
+      calendarEventId,
+      createdAt: new Date().toISOString(),
+    };
+    const finalState = {
+      ...prev,
+      announcements: [newItem, ...prev.announcements],
+      auditLogs: addAuditLog(adminName, "Announcements", `Published announcement "${announcement.title}"`, prev.auditLogs),
+    };
+    await saveToBackend(finalState);
+    settingsRef.current = finalState;
+    setSettings(finalState);
   }, []);
 
-  const deleteAnnouncement = useCallback((id: string, adminName = "Admin") => {
-    setSettings((prev) => {
-      const item = prev.announcements.find((a) => a.id === id);
-      const announcements = prev.announcements.filter((a) => a.id !== id);
-      const auditLogs = addAuditLog(adminName, "Announcements", `Deleted announcement "${item?.title || id}"`, prev.auditLogs);
-      return { ...prev, announcements, auditLogs };
-    });
+  const deleteAnnouncement = useCallback(async (id: string, adminName = "Admin") => {
+    const prev = settingsRef.current;
+    const item = prev.announcements.find((a) => a.id === id);
+    if (item?.calendarEventId) {
+      const { error } = await supabase.from("calendar_events").delete().eq("id", item.calendarEventId);
+      if (error) throw error;
+    }
+    const finalState = {
+      ...prev,
+      announcements: prev.announcements.filter((a) => a.id !== id),
+      auditLogs: addAuditLog(adminName, "Announcements", `Deleted announcement "${item?.title || id}"`, prev.auditLogs),
+    };
+    await saveToBackend(finalState);
+    settingsRef.current = finalState;
+    setSettings(finalState);
   }, []);
 
-  const addEvent = useCallback((event: Omit<EventItem, "id">, adminName = "Admin") => {
-    setSettings((prev) => {
-      const newItem: EventItem = { ...event, id: `e-${Date.now()}` };
-      const events = [...prev.events, newItem];
-      const auditLogs = addAuditLog(adminName, "Events", `Created event "${event.title}" on ${event.date}`, prev.auditLogs);
-      return { ...prev, events, auditLogs };
+  const addEvent = useCallback(async (event: Omit<EventItem, "id" | "calendarEventId">, adminName = "Admin") => {
+    const calendarEventId = await createCalendarEvent({
+      title: event.title,
+      description: event.description,
+      startDate: event.date,
+      endDate: event.date,
+      startTime: event.time,
+      eventType:
+        event.type === "Meeting"
+          ? "meeting"
+          : event.type === "Training"
+            ? "training"
+            : "company",
     });
+    const prev = settingsRef.current;
+    const newItem: EventItem = { ...event, id: `e-${Date.now()}`, calendarEventId };
+    const finalState = {
+      ...prev,
+      events: [...prev.events, newItem],
+      auditLogs: addAuditLog(adminName, "Events", `Created event "${event.title}" on ${event.date}`, prev.auditLogs),
+    };
+    await saveToBackend(finalState);
+    settingsRef.current = finalState;
+    setSettings(finalState);
   }, []);
 
-  const deleteEvent = useCallback((id: string, adminName = "Admin") => {
-    setSettings((prev) => {
-      const item = prev.events.find((e) => e.id === id);
-      const events = prev.events.filter((e) => e.id !== id);
-      const auditLogs = addAuditLog(adminName, "Events", `Removed event "${item?.title || id}"`, prev.auditLogs);
-      return { ...prev, events, auditLogs };
-    });
+  const deleteEvent = useCallback(async (id: string, adminName = "Admin") => {
+    const prev = settingsRef.current;
+    const item = prev.events.find((e) => e.id === id);
+    if (item?.calendarEventId) {
+      const { error } = await supabase.from("calendar_events").delete().eq("id", item.calendarEventId);
+      if (error) throw error;
+    }
+    const finalState = {
+      ...prev,
+      events: prev.events.filter((e) => e.id !== id),
+      auditLogs: addAuditLog(adminName, "Events", `Removed event "${item?.title || id}"`, prev.auditLogs),
+    };
+    await saveToBackend(finalState);
+    settingsRef.current = finalState;
+    setSettings(finalState);
   }, []);
 
   const isWorkingDay = useCallback(

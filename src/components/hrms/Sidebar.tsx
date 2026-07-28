@@ -5,6 +5,7 @@ import {
   CalendarDays, Calendar as CalIcon, Settings, LogOut, Menu, X,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useSettings } from "@/context/SettingsContext";
 import { initials } from "@/lib/hrms-utils";
 
 /* ── Sidebar open/close context (shared with Navbar hamburger) ── */
@@ -45,6 +46,7 @@ const NAV = [
 
 export function Sidebar() {
   const { profile, signOut } = useAuth();
+  const { settings } = useSettings();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const isAdmin = profile?.role === "Admin" || profile?.role === "CEO";
   const isCeo = profile?.role === "CEO";
@@ -54,10 +56,17 @@ export function Sidebar() {
     <>
       {/* Header */}
       <div className="px-5 py-5 flex items-center gap-3 border-b border-sidebar-border">
-        <img src="/logo.jpg" alt="Tech Minds" className="h-10 w-10 rounded-xl object-cover" />
+        <img
+          src={settings?.general?.logoUrl || "/logo.jpg"}
+          alt={settings?.general?.companyName || "Tech Minds"}
+          className="h-10 w-10 rounded-xl object-cover bg-white"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = "/logo.jpg";
+          }}
+        />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold leading-tight">Tech Minds</p>
-          <p className="text-xs text-slate-400">IT Solutions HRMS</p>
+          <p className="text-sm font-semibold leading-tight truncate">{settings?.general?.companyName || "Tech Minds"}</p>
+          <p className="text-xs text-slate-400">HRMS Portal</p>
         </div>
         {/* Close button — only on mobile overlay */}
         <button onClick={close} className="lg:hidden p-1.5 rounded-lg hover:bg-sidebar-accent text-slate-400">

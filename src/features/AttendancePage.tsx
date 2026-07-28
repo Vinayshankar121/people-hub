@@ -38,6 +38,7 @@ type AttRow = {
   status: string;
   approval_status: string;
   edit_requested: boolean;
+  gps_enabled?: boolean;
   original_punch_in?: string;
   original_punch_out?: string;
   remarks?: string;
@@ -45,7 +46,7 @@ type AttRow = {
   longitude?: number;
   accuracy?: number;
   distance_meters?: number;
-  employees?: { name: string; employee_id: string };
+  employees?: { name: string; employee_id: string; gps_enabled?: boolean };
 };
 
 type AdminAttendanceStatus = "Present" | "Half Day" | "Absent" | "Leave" | "Weekend";
@@ -104,25 +105,86 @@ function AdminAttendance() {
     overtimeHours: 0,
   });
 
+  const [includeInactive, setIncludeInactive] = useState(false);
+
   const loadAll = async () => {
-    const { data: emps } = await supabase.from("employees").select("auth_uid, name, employee_id");
-    setEmployees((emps ?? []) as any);
+    const { data: allEmps } = await supabase.from("employees").select("*");
+    const empMap = new Map<string, any>();
+    (allEmps ?? []).forEach((e: any) => {
+      if (e.auth_uid) empMap.set(e.auth_uid, e);
+      if (e.employee_id) empMap.set(e.employee_id, e);
+    });
 
-    let q = supabase.from("attendance").select("*, employees!attendance_user_auth_uid_fkey(name, employee_id)").eq("date", date);
-    if (empFilter !== "All") q = q.eq("user_auth_uid", empFilter);
-    const { data } = await q.order("date", { ascending: false });
-    setRows((data as AttRow[]) ?? []);
+    const isEmpActive = (e: any) => {
+      const isMetaActive = e.status === "Active" || e.is_active === true || e.employment_status === "Active";
+      const isMetaInactive = e.status === "Inactive" || e.is_active === false || e.employment_status === "Inactive";
+      return isMetaActive || !isMetaInactive;
+    };
 
-    const { data: pen } = await supabase.from("attendance")
-      .select("*, employees!attendance_user_auth_uid_fkey(name, employee_id)")
+    const filteredEmps = (allEmps ?? []).filter((e: any) => {
+      if (e.role === "Admin" || e.role === "CEO") return false;
+      if (!includeInactive && !isEmpActive(e)) return false;
+      return true;
+    });
+    setEmployees(filteredEmps as any);
+
+    let q = supabase.from("attendance").select("*").eq("date", date);
+    if (empFilter !== "All") {
+      q = q.or(`user_auth_uid.eq.${empFilter},employee_id.eq.${empFilter}`);
+    }
+    const { data: rawAtt, error: attErr } = await q.order("created_at", { ascending: false });
+    if (attErr) {
+      console.warn("Attendance query warning:", attErr);
+    }
+
+    const fetchedRows = (rawAtt ?? []).map((row: any) => {
+      const emp = empMap.get(row.user_auth_uid) || empMap.get(row.employee_id) || {};
+      return {
+        ...row,
+        employees: {
+          name: emp.name || row.user_auth_uid || "Unknown Employee",
+          employee_id: emp.employee_id || "",
+          gps_enabled: emp.gps_enabled ?? true,
+          is_active: emp.is_active ?? true,
+          status: emp.status ?? "Active",
+          role: emp.role ?? "Employee",
+        },
+      };
+    });
+
+    const filteredRows = fetchedRows.filter((r: any) => {
+      const empRole = r.employees?.role;
+      if (empRole === "Admin" || empRole === "CEO") return false;
+      if (!includeInactive && !isEmpActive(r.employees)) return false;
+      return true;
+    });
+    setRows(filteredRows as any);
+
+    const { data: penRaw } = await supabase.from("attendance")
+      .select("*")
       .eq("edit_requested", true)
       .eq("approval_status", "Pending");
-    setPending((pen as AttRow[]) ?? []);
+
+    const penMapped = (penRaw ?? []).map((row: any) => {
+      const emp = empMap.get(row.user_auth_uid) || empMap.get(row.employee_id) || {};
+      return {
+        ...row,
+        employees: {
+          name: emp.name || row.user_auth_uid || "Unknown Employee",
+          employee_id: emp.employee_id || "",
+          gps_enabled: emp.gps_enabled ?? true,
+          is_active: emp.is_active ?? true,
+          status: emp.status ?? "Active",
+          role: emp.role ?? "Employee",
+        },
+      };
+    });
+    setPending(penMapped as any);
   };
 
   useEffect(() => {
     loadAll();
-  }, [date, empFilter]);
+  }, [date, empFilter, includeInactive]);
 
   const handleReview = async (id: string, action: "approve" | "reject") => {
     try {
@@ -409,12 +471,23 @@ function AdminAttendance() {
       {activeTab === "daily" ? (
         <>
           {/* Daily Filter */}
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col sm:flex-row items-center gap-3">
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="px-3 py-2.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             <select value={empFilter} onChange={(e) => setEmpFilter(e.target.value)} className="px-3 py-2.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
               <option value="All">All Employees</option>
-              {employees.map((em) => <option key={em.auth_uid} value={em.auth_uid}>{em.name} ({em.employee_id})</option>)}
+              {employees
+                .filter((em) => includeInactive || ((em as any).is_active !== false && (em as any).status !== "Inactive"))
+                .map((em) => <option key={em.auth_uid} value={em.auth_uid}>{em.name} ({em.employee_id})</option>)}
             </select>
+            <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 bg-white border px-3.5 py-2.5 rounded-xl cursor-pointer hover:bg-slate-50 transition">
+              <input
+                type="checkbox"
+                checked={includeInactive}
+                onChange={(e) => setIncludeInactive(e.target.checked)}
+                className="rounded border-slate-300 text-brand focus:ring-brand"
+              />
+              Include Inactive Employees
+            </label>
           </div>
 
           {/* Manual Admin Attendance (Upsert) */}
@@ -592,6 +665,10 @@ function AdminAttendance() {
                     <th className="text-left px-5 py-3 font-medium text-slate-500">Employee</th>
                     <th className="text-left px-5 py-3 font-medium text-slate-500">Check In</th>
                     <th className="text-left px-5 py-3 font-medium text-slate-500">Check Out</th>
+                    <th className="text-left px-5 py-3 font-medium text-slate-500">GPS Status</th>
+                    <th className="text-left px-5 py-3 font-medium text-slate-500">Latitude</th>
+                    <th className="text-left px-5 py-3 font-medium text-slate-500">Longitude</th>
+                    <th className="text-left px-5 py-3 font-medium text-slate-500">Distance</th>
                     <th className="text-left px-5 py-3 font-medium text-slate-500">Hours Worked</th>
                     <th className="text-left px-5 py-3 font-medium text-slate-500">Status</th>
                     <th className="text-left px-5 py-3 font-medium text-slate-500">Edit</th>
@@ -610,21 +687,26 @@ function AdminAttendance() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3 font-mono text-xs">
-                        <div className="flex items-center gap-1.5">
-                          <span>{r.punch_in_time || "—"}</span>
-                          {r.distance_meters !== undefined && r.distance_meters !== null ? (
-                            <span
-                              className="inline-flex items-center gap-0.5 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 font-sans"
-                              title={`GPS: Lat ${r.latitude}, Lon ${r.longitude} (Accuracy: ${r.accuracy}m)`}
-                            >
-                              <MapPin className="h-3 w-3 shrink-0 text-emerald-500" />
-                              {r.distance_meters}m
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
+                      <td className="px-5 py-3 font-mono text-xs">{r.punch_in_time || "—"}</td>
                       <td className="px-5 py-3 font-mono text-xs">{r.punch_out_time || "—"}</td>
+                      <td className="px-5 py-3">
+                        {r.gps_enabled !== false && r.employees?.gps_enabled !== false ? (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            🟢 Enabled
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                            <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                            🔴 Disabled
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 font-mono text-xs text-slate-600">{r.latitude !== null && r.latitude !== undefined ? r.latitude : "—"}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-slate-600">{r.longitude !== null && r.longitude !== undefined ? r.longitude : "—"}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-slate-600">
+                        {r.distance_meters !== null && r.distance_meters !== undefined ? `${r.distance_meters}m` : "—"}
+                      </td>
                       <td className="px-5 py-3 text-slate-700">{r.total_hours ? `${r.total_hours}h` : "—"}</td>
                       <td className="px-5 py-3"><Badge status={r.status} /></td>
                       <td className="px-5 py-3">
@@ -635,7 +717,7 @@ function AdminAttendance() {
                     </tr>
                   ))}
                   {rows.length === 0 && (
-                    <tr><td colSpan={7} className="text-center py-12 text-slate-500"><CalendarCheck className="h-10 w-10 mx-auto text-slate-300 mb-2" />No attendance records for this date</td></tr>
+                    <tr><td colSpan={11} className="text-center py-12 text-slate-500"><CalendarCheck className="h-10 w-10 mx-auto text-slate-300 mb-2" />No attendance records for this date</td></tr>
                   )}
                 </tbody>
               </table>

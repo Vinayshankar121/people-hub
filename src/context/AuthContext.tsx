@@ -15,6 +15,12 @@ export type EmployeeProfile = {
   phone: string;
   role: "Admin" | "Employee" | "CEO";
   profileImage: string;
+  gps_enabled?: boolean;
+  is_active?: boolean;
+  employment_status?: "Active" | "Inactive" | string;
+  deactivated_at?: string | null;
+  deactivation_reason?: string | null;
+  reactivated_at?: string | null;
 };
 
 type AuthState = {
@@ -39,7 +45,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select("*")
       .eq("auth_uid", uid)
       .maybeSingle();
-    setProfile((data as EmployeeProfile | null) ?? null);
+
+    const emp = data as EmployeeProfile | null;
+    if (emp && (emp.is_active === false || emp.employment_status === "Inactive")) {
+      await supabase.auth.signOut();
+      setSession(null);
+      setProfile(null);
+      return null;
+    }
+    setProfile(emp);
+    return emp;
   };
 
   useEffect(() => {
@@ -54,16 +69,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
-      if (data.session?.user) fetchProfile(data.session.user.id).finally(() => setLoading(false));
-      else setLoading(false);
+      if (data.session?.user) {
+        fetchProfile(data.session.user.id).finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
     });
 
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!session?.user) return;
+    const interval = setInterval(() => {
+      fetchProfile(session.user.id);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [session]);
+
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { error: error.message };
+    if (data.session?.user) {
+      const fetched = await fetchProfile(data.session.user.id);
+      if (!fetched || fetched.is_active === false || fetched.employment_status === "Inactive") {
+        await supabase.auth.signOut();
+        setSession(null);
+        setProfile(null);
+        return { error: "Your account is currently inactive. Please contact your administrator." };
+      }
+    }
+    return { error: null };
   };
 
   const signOut = async () => {

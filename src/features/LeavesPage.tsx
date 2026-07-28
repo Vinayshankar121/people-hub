@@ -162,7 +162,13 @@ function EmployeeLeaves({ profile }: { profile: any }) {
 
   useEffect(() => { load(); }, [profile]);
 
+  const isInactive = profile.is_active === false || profile.employment_status === "Inactive";
+
   const handleSubmit = async () => {
+    if (isInactive) {
+      toast.error("Leave requests cannot be submitted for inactive accounts.");
+      return;
+    }
     if (!form.start_date || !form.end_date || !form.reason) {
       toast.error("Please fill all required fields");
       return;
@@ -192,12 +198,21 @@ function EmployeeLeaves({ profile }: { profile: any }) {
 
   return (
     <div className="space-y-6 max-w-7xl">
+      {isInactive && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-medium">
+          ⚠️ Your account is currently inactive. Leave submissions, modifications, and cancellations are disabled.
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Leave Applications</h1>
           <p className="text-sm text-slate-500 mt-1">Submit leaves and review approvals.</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-white text-sm font-medium hover:opacity-90 transition">
+        <button
+          onClick={() => !isInactive && setShowModal(true)}
+          disabled={isInactive}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition"
+        >
           <Plus className="h-4 w-4" /> Request Leave
         </button>
       </div>

@@ -46,12 +46,12 @@ export type GPSLocationResult = {
 };
 
 /**
- * Requests the browser's live GPS location and computes distance to the office.
+ * Requests the browser's live GPS location and computes distance to the target office coordinates.
  */
 export function getCurrentLocation(
   targetLat = OFFICE_GEO_CONFIG.latitude,
   targetLng = OFFICE_GEO_CONFIG.longitude,
-  allowedRadius = OFFICE_GEO_CONFIG.allowedRadiusMeters
+  allowedRadiusMeters = OFFICE_GEO_CONFIG.allowedRadiusMeters
 ): Promise<GPSLocationResult> {
   return new Promise((resolve, reject) => {
     if (typeof window === "undefined" || !navigator.geolocation) {
@@ -69,7 +69,7 @@ export function getCurrentLocation(
           targetLng
         );
 
-        const isWithinRadius = distanceMeters <= allowedRadius;
+        const isWithinRadius = distanceMeters <= allowedRadiusMeters;
 
         resolve({
           latitude,

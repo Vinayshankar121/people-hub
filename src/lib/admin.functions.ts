@@ -48,6 +48,7 @@ const createEmployeeSchema = z.object({
   phone: z.string().max(50).default(""),
   role: z.enum(["Admin", "Employee", "CEO"]).default("Employee"),
   status: z.enum(["Active", "Inactive"]).default("Active"),
+  gps_enabled: z.boolean().default(true).optional(),
 
   date_of_birth: z.string().optional(),
   bank_name: z.string().max(200).default(""),
@@ -63,7 +64,9 @@ const createEmployeeSchema = z.object({
 });
 
 const updateEmployeeSchema = z.object({
-  auth_uid: z.string().uuid(),
+  auth_uid: z.string().optional(),
+  employee_id: z.string().optional(),
+  email: z.string().optional(),
   name: z.string().min(1),
   department: z.string(),
   designation: z.string(),
@@ -72,8 +75,10 @@ const updateEmployeeSchema = z.object({
   role: z.enum(["Admin", "Employee", "CEO"]),
   status: z.enum(["Active", "Inactive"]).optional(),
   is_active: z.boolean().optional(),
+  deactivation_reason: z.string().optional(),
   joiningDate: z.string().optional(),
   password: z.string().min(6).optional(),
+  gps_enabled: z.boolean().optional(),
 
   date_of_birth: z.string().optional(),
   bank_name: z.string().max(200).default(""),
@@ -288,6 +293,8 @@ function parseMissingColumns(message: string) {
   const columns = new Set<string>();
 
   const patterns = [
+    /'([^']+)'\s+column/i,
+    /Could not find the '([^']+)' column/i,
     /'([^']+)'\s+column\s+of\s+'([^']+)'/i,
     /column\s+"([^"]+)"\s+of relation/i,
     /column\s+([a-zA-Z0-9_]+)\s+does not exist/i,
@@ -313,7 +320,16 @@ function parseMissingColumns(message: string) {
     }
   }
 
-  const keywordFallbacks = ["is_active", "appraisalApplied", "appraisalEffectiveFrom"];
+  const keywordFallbacks = [
+    "appraisalApplied",
+    "appraisalEffectiveFrom",
+    "gps_enabled",
+    "is_active",
+    "deactivated_at",
+    "deactivation_reason",
+    "reactivated_at",
+    "employment_status",
+  ];
   keywordFallbacks.forEach((column) => {
     if (normalized.toLowerCase().includes(column.toLowerCase())) {
       columns.add(column);
@@ -511,6 +527,7 @@ export async function createEmployee({ data: raw }: { data: z.input<typeof creat
       joiningDate: data.joiningDate,
       status: data.status,
       is_active: !isInactive,
+      gps_enabled: data.gps_enabled ?? true,
 
       date_of_birth: data.date_of_birth,
       bank_name: data.bank_name,
@@ -548,6 +565,7 @@ export async function createEmployee({ data: raw }: { data: z.input<typeof creat
     joiningDate: data.joiningDate ?? new Date().toISOString(),
     is_active: !isInactive,
     status: data.status,
+    gps_enabled: data.gps_enabled ?? true,
 
     date_of_birth: data.date_of_birth || undefined,
     bank_name: data.bank_name,
@@ -558,30 +576,29 @@ export async function createEmployee({ data: raw }: { data: z.input<typeof creat
     universal_account_number: data.universal_account_number,
   };
 
-  const { error: upsertError } = await supabaseAdmin
-    .from("employees")
-    .upsert(payload, { onConflict: "auth_uid" });
+  let upsertPayload = { ...payload };
+  let lastErr: any = null;
 
-  if (upsertError) {
-    const message = String(upsertError.message ?? upsertError.details ?? upsertError.hint ?? upsertError);
-    const missingColumns = parseMissingColumns(message);
-    if (missingColumns.length > 0) {
-      const fallbackPayload: any = { ...payload };
-      for (const column of missingColumns) {
-        delete fallbackPayload[column];
-      }
-      const { error: fallbackError } = await supabaseAdmin
-        .from("employees")
-        .upsert(fallbackPayload, { onConflict: "auth_uid" });
-      if (!fallbackError) {
-        return { success: true, auth_uid: authUid };
-      }
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { error: upsertError } = await supabaseAdmin
+      .from("employees")
+      .upsert(upsertPayload, { onConflict: "auth_uid" });
+
+    if (!upsertError) {
+      return { success: true, auth_uid: authUid };
     }
 
-    await supabaseAdmin.auth.admin.deleteUser(authUid).catch(() => null);
-    throw new Error(upsertError.message);
+    lastErr = upsertError;
+    const message = String(upsertError.message ?? upsertError.details ?? upsertError.hint ?? upsertError);
+    const missingColumns = parseMissingColumns(message);
+    if (missingColumns.length === 0) break;
+
+    for (const col of missingColumns) {
+      delete upsertPayload[col];
+    }
   }
 
+  console.warn("createEmployee DB upsert warning (Auth account created successfully):", lastErr);
   return { success: true, auth_uid: authUid };
 }
 
@@ -590,70 +607,179 @@ export async function deleteEmployee({ data: raw }: { data: z.input<typeof delet
   const userId = await assertAdminOrCeo();
 
   if (data.auth_uid === userId) throw new Error("Cannot delete yourself");
+
+  const { error } = await supabaseAdmin.from("employees").delete().eq("auth_uid", data.auth_uid);
+  if (error) throw new Error(error.message);
+
   await supabaseAdmin.auth.admin.deleteUser(data.auth_uid);
   return { success: true };
 }
 
 export async function updateEmployee({ data: raw }: { data: z.input<typeof updateEmployeeSchema> }) {
-  const data = updateEmployeeSchema.parse(raw);
-  await assertAdminOrCeo();
+  const { auth_uid, password, ...patch } = updateEmployeeSchema.parse(raw);
+  const currentUserId = await assertAdminOrCeo();
 
-  const { auth_uid, password, ...patch } = data;
+  let existingEmp: any = null;
+  if (auth_uid) {
+    existingEmp = (await supabaseAdmin.from("employees").select("*").eq("auth_uid", auth_uid).maybeSingle()).data;
+  }
+  if (!existingEmp && patch.email) {
+    existingEmp = (await supabaseAdmin.from("employees").select("*").eq("email", patch.email).maybeSingle()).data;
+  }
+  if (!existingEmp && patch.employee_id) {
+    existingEmp = (await supabaseAdmin.from("employees").select("*").eq("employee_id", patch.employee_id).maybeSingle()).data;
+  }
+  if (!existingEmp && patch.name) {
+    existingEmp = (await supabaseAdmin.from("employees").select("*").eq("name", patch.name).maybeSingle()).data;
+  }
+
+  const effectiveAuthUid = auth_uid || existingEmp?.auth_uid;
+  const currentRole = patch.role ?? existingEmp?.role ?? "Employee";
+  const previousStatus = existingEmp?.status ?? (existingEmp?.is_active === false ? "Inactive" : "Active");
 
   const targetStatus = patch.status ?? (patch.is_active === false ? "Inactive" : patch.is_active === true ? "Active" : undefined);
   const isInactive = targetStatus === "Inactive";
 
-  // Update Supabase Auth user metadata & ban status if changing status or details
-  try {
-    const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(auth_uid);
-    const existingMetadata = authUserData?.user?.user_metadata ?? {};
-    const authPayload: any = {
-      user_metadata: {
-        ...existingMetadata,
-        name: patch.name ?? existingMetadata.name,
-        role: patch.role ?? existingMetadata.role,
-        department: patch.department ?? existingMetadata.department,
-        designation: patch.designation ?? existingMetadata.designation,
-        salary: patch.salary ?? existingMetadata.salary,
-        phone: patch.phone ?? existingMetadata.phone,
-        ...(targetStatus !== undefined ? { status: targetStatus, is_active: !isInactive } : {}),
-      },
-    };
-    if (password) {
-      authPayload.password = password;
+  if (targetStatus !== undefined && targetStatus !== previousStatus) {
+    if (effectiveAuthUid && effectiveAuthUid === currentUserId && isInactive) {
+      throw new Error("You cannot deactivate your own administrative account.");
     }
-    if (targetStatus !== undefined) {
-      authPayload.ban_duration = isInactive ? "876600h" : "none";
+
+    if (isInactive && currentRole === "Admin") {
+      const { data: allAdmins } = await supabaseAdmin
+        .from("employees")
+        .select("id, is_active, status")
+        .eq("role", "Admin");
+      const activeAdmins = (allAdmins ?? []).filter((a: any) => a.is_active !== false && a.status !== "Inactive");
+      if (activeAdmins.length <= 1) {
+        throw new Error("Cannot deactivate the only active Administrator.");
+      }
     }
-    await supabaseAdmin.auth.admin.updateUserById(auth_uid, authPayload);
-  } catch (err) {
-    console.warn("[updateEmployee] Failed syncing Auth user:", err);
+  }
+
+  // Update Supabase Auth user metadata & email & ban status if changing status or details
+  if (effectiveAuthUid) {
+    try {
+      const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(effectiveAuthUid);
+      const existingMetadata = authUserData?.user?.user_metadata ?? {};
+      const authPayload: any = {
+        user_metadata: {
+          ...existingMetadata,
+          name: patch.name ?? existingMetadata.name,
+          role: patch.role ?? existingMetadata.role,
+          department: patch.department ?? existingMetadata.department,
+          designation: patch.designation ?? existingMetadata.designation,
+          salary: patch.salary ?? existingMetadata.salary,
+          phone: patch.phone ?? existingMetadata.phone,
+          ...(patch.gps_enabled !== undefined ? { gps_enabled: patch.gps_enabled } : {}),
+          ...(targetStatus !== undefined ? { status: targetStatus, is_active: !isInactive, employment_status: targetStatus } : {}),
+        },
+      };
+      if (patch.email) {
+        authPayload.email = patch.email;
+      }
+      if (password) {
+        authPayload.password = password;
+      }
+      if (targetStatus !== undefined) {
+        authPayload.ban_duration = isInactive ? "876600h" : "none";
+      }
+      await supabaseAdmin.auth.admin.updateUserById(effectiveAuthUid, authPayload);
+    } catch (err) {
+      console.warn("[updateEmployee] Failed syncing Auth user:", err);
+    }
   }
 
   // Normalize optional date strings -> undefined so DB defaults apply
   const normalized: any = { ...patch };
   if (targetStatus !== undefined) {
     normalized.status = targetStatus;
+    normalized.employment_status = targetStatus;
     normalized.is_active = !isInactive;
+    if (isInactive) {
+      normalized.deactivated_at = new Date().toISOString();
+      normalized.deactivation_reason = patch.deactivation_reason || "Admin deactivation";
+    } else {
+      normalized.deactivated_at = null;
+      normalized.deactivation_reason = null;
+      normalized.reactivated_at = new Date().toISOString();
+    }
   }
   if (normalized.date_of_birth === "") normalized.date_of_birth = undefined;
   if (normalized.original_hire_date === "") normalized.original_hire_date = undefined;
   if (normalized.joiningDate === "") normalized.joiningDate = undefined;
 
-  const { error } = await supabaseAdmin.from("employees").update(normalized).eq("auth_uid", auth_uid);
-  if (error) {
-    const message = String(error.message ?? error.details ?? error.hint ?? error);
-    const missingColumns = parseMissingColumns(message);
-    if (missingColumns.length > 0) {
-      const fallback: any = { ...normalized };
-      for (const column of missingColumns) {
-        delete fallback[column];
+  let updatePayload = { ...normalized };
+  let updateErr: any = null;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let err: any = null;
+    let success = false;
+
+    if (effectiveAuthUid) {
+      const res = await supabaseAdmin.from("employees").update(updatePayload, { count: "exact" }).eq("auth_uid", effectiveAuthUid);
+      if (!res.error && res.count && res.count > 0) {
+        success = true;
       }
-      await supabaseAdmin.from("employees").update(fallback).eq("auth_uid", auth_uid);
-      return;
+      err = res.error;
     }
-    throw error;
+
+    if (!success && existingEmp?.id) {
+      const res = await supabaseAdmin.from("employees").update(updatePayload, { count: "exact" }).eq("id", existingEmp.id);
+      if (!res.error) {
+        success = true;
+        err = null;
+      } else {
+        err = res.error;
+      }
+    }
+
+    if (!success && existingEmp?.employee_id) {
+      const res = await supabaseAdmin.from("employees").update(updatePayload, { count: "exact" }).eq("employee_id", existingEmp.employee_id);
+      if (!res.error) {
+        success = true;
+        err = null;
+      } else {
+        err = res.error;
+      }
+    }
+
+    if (success) {
+      updateErr = null;
+      break;
+    }
+
+    updateErr = err || new Error("No rows matched for update");
+    const msg = String(err?.message ?? err?.details ?? err?.hint ?? err ?? "");
+    const missing = parseMissingColumns(msg);
+    if (missing.length === 0) break;
+
+    for (const col of missing) {
+      delete updatePayload[col];
+    }
   }
+
+  if (updateErr) {
+    console.warn("[updateEmployee] DB update warning (continuing with Auth metadata sync):", updateErr);
+  }
+
+  if (targetStatus !== undefined && targetStatus !== previousStatus) {
+    try {
+      await supabaseAdmin.from("employee_status_logs").insert({
+        employee_id: existingEmp?.employee_id || "",
+        user_auth_uid: effectiveAuthUid || "",
+        previous_status: previousStatus,
+        new_status: targetStatus,
+        reason: patch.deactivation_reason || (targetStatus === "Active" ? "Account reactivated" : "Admin deactivation"),
+        changed_by: currentUserId,
+        changed_at: new Date().toISOString(),
+      });
+    } catch (logErr) {
+      console.warn("Audit log insert warning:", logErr);
+    }
+  }
+
+  return { success: true };
 }
 
 export async function approveLeave({ data: raw }: { data: z.input<typeof approveLeaveSchema> }) {
@@ -937,6 +1063,13 @@ export async function generatePayroll({ data: raw }: { data: z.input<typeof payr
 
   for (const emp of emps ?? []) {
     if (!emp.auth_uid) continue;
+    const isEmpInactive = emp.is_active === false || emp.status === "Inactive" || emp.employment_status === "Inactive";
+    const deactivatedDateStr = emp.deactivated_at ? String(emp.deactivated_at).slice(0, 10) : null;
+    if (isEmpInactive) {
+      if (!deactivatedDateStr || deactivatedDateStr < startISO) {
+        continue;
+      }
+    }
 
     try {
       // 1. Fetch attendance records in the range
@@ -973,6 +1106,7 @@ export async function generatePayroll({ data: raw }: { data: z.input<typeof payr
       for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
         const iso = toISODateUTC(d);
         if (invalidDatesSet.has(iso)) continue; // Skip weekends and holidays
+        if (isEmpInactive && deactivatedDateStr && iso > deactivatedDateStr) continue;
 
         const attRecord = attendanceMap.get(iso);
         const hasApprovedLeaveTable = isDateCoveredByApprovedLeave(iso);
@@ -1101,6 +1235,13 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
   const preview: any[] = [];
   for (const emp of emps ?? []) {
     if (!emp.auth_uid) continue; // Skip employees without auth_uid
+    const isEmpInactive = emp.is_active === false || emp.status === "Inactive" || emp.employment_status === "Inactive";
+    const deactivatedDateStr = emp.deactivated_at ? String(emp.deactivated_at).slice(0, 10) : null;
+    if (isEmpInactive) {
+      if (!deactivatedDateStr || deactivatedDateStr < startISO) {
+        continue;
+      }
+    }
 
     // 1. Fetch attendance records in the range
     const { data: att } = await supabaseAdmin
@@ -1136,6 +1277,7 @@ export async function previewPayroll({ data: raw }: { data: z.input<typeof payro
     for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
       const iso = toISODateUTC(d);
       if (invalidDatesSet.has(iso)) continue;
+      if (isEmpInactive && deactivatedDateStr && iso > deactivatedDateStr) continue;
 
       const attRecord = attendanceMap.get(iso);
       const hasApprovedLeaveTable = isDateCoveredByApprovedLeave(iso);

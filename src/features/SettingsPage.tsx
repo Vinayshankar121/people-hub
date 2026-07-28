@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Building2,
   CalendarCheck,
@@ -22,6 +22,8 @@ import {
   Lock,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/integrations/supabase/client.admin";
 import {
   useSettings,
   type WeekdayKey,
@@ -72,6 +74,17 @@ export function SettingsPage() {
   const [empForm, setEmpForm] = useState(settings.employee);
   const [secForm, setSecForm] = useState(settings.security);
 
+  useEffect(() => {
+    setGenForm(settings.general);
+    setAttForm(settings.attendance);
+    setGeoForm(settings.geo);
+    setPayForm(settings.payroll);
+    setNotifForm(settings.notifications);
+    setLeaveForm(settings.leave);
+    setEmpForm(settings.employee);
+    setSecForm(settings.security);
+  }, [settings]);
+
   // Modals for adding Holidays, Announcements, Events
   const [showHolidayModal, setShowHolidayModal] = useState(false);
   const [newHoliday, setNewHoliday] = useState<Omit<HolidayItem, "id">>({
@@ -112,9 +125,22 @@ export function SettingsPage() {
     toast.success("Attendance settings saved successfully!");
   };
 
-  const handleSaveGeo = () => {
+  const handleSaveGeo = async () => {
     updateSettings({ geo: geoForm }, "WFH & Geo Location Settings", adminName);
-    toast.success("WFH & Geo Location settings saved successfully!");
+
+    try {
+      const gpsState = geoForm.enableGpsRestriction;
+      await supabase.from("employees").update({ gps_enabled: gpsState }).neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabaseAdmin.from("employees").update({ gps_enabled: gpsState }).neq("id", "00000000-0000-0000-0000-000000000000");
+    } catch (e) {
+      console.warn("Could not bulk update employee gps_enabled column:", e);
+    }
+
+    if (!geoForm.enableGpsRestriction) {
+      toast.success("GPS Restriction turned OFF globally! All employees can now punch in without location.");
+    } else {
+      toast.success("GPS Restriction turned ON! Employees require live location for punch-in.");
+    }
   };
 
   const handleSavePayroll = () => {
@@ -152,41 +178,51 @@ export function SettingsPage() {
     toast.success("Holiday added to company calendar");
   };
 
-  const handleAddAnnSubmit = () => {
+  const handleAddAnnSubmit = async () => {
     if (!newAnn.title.trim()) {
       toast.error("Please enter announcement title");
       return;
     }
-    addAnnouncement(newAnn, adminName);
-    setShowAnnModal(false);
-    setNewAnn({
-      title: "",
-      description: "",
-      priority: "Normal",
-      startDate: new Date().toISOString().slice(0, 10),
-      endDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-      departments: ["All"],
-      published: true,
-    });
-    toast.success("Announcement published successfully");
+    try {
+      await addAnnouncement(newAnn, adminName);
+      setShowAnnModal(false);
+      setNewAnn({
+        title: "",
+        description: "",
+        priority: "Normal",
+        startDate: new Date().toISOString().slice(0, 10),
+        endDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+        departments: ["All"],
+        published: true,
+      });
+      toast.success("Announcement published successfully");
+    } catch (error) {
+      console.error("Failed to publish announcement:", error);
+      toast.error("Could not save the announcement to Supabase");
+    }
   };
 
-  const handleAddEventSubmit = () => {
+  const handleAddEventSubmit = async () => {
     if (!newEvent.title.trim()) {
       toast.error("Please enter event title");
       return;
     }
-    addEvent(newEvent, adminName);
-    setShowEventModal(false);
-    setNewEvent({
-      title: "",
-      type: "Office Event",
-      date: new Date().toISOString().slice(0, 10),
-      time: "10:00 AM",
-      description: "",
-      color: "#8B5CF6",
-    });
-    toast.success("Event created successfully");
+    try {
+      await addEvent(newEvent, adminName);
+      setShowEventModal(false);
+      setNewEvent({
+        title: "",
+        type: "Office Event",
+        date: new Date().toISOString().slice(0, 10),
+        time: "10:00 AM",
+        description: "",
+        color: "#8B5CF6",
+      });
+      toast.success("Event created successfully");
+    } catch (error) {
+      console.error("Failed to create event:", error);
+      toast.error("Could not save the event to Supabase");
+    }
   };
 
   const weekdays: WeekdayKey[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];

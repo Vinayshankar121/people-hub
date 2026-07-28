@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/integrations/supabase/client.admin";
 import { StatCard } from "@/components/hrms/StatCard";
 import { Modal } from "@/components/hrms/Modal";
 import { fmtDate, fmtMoney, todayISO } from "@/lib/hrms-utils";
@@ -42,7 +43,40 @@ function AdminDashboard() {
     (async () => {
       const today = todayISO();
       const now = new Date();
-      const { data: emps } = await supabase.from("employees").select("auth_uid, name, employee_id, email").eq("role", "Employee");
+      const { data: allEmps } = await supabase.from("employees").select("*");
+
+      let authUsersMap = new Map<string, any>();
+      try {
+        const { data: authData } = await supabaseAdmin.auth.admin.listUsers();
+        if (authData?.users) {
+          authData.users.forEach((u: any) => authUsersMap.set(u.id, u));
+        }
+      } catch (e) {
+        console.warn("Could not fetch auth users for dashboard stats:", e);
+      }
+
+      const emps = (allEmps ?? []).filter((emp: any) => {
+        const authUser = emp.auth_uid ? authUsersMap.get(emp.auth_uid) : null;
+        const metadata = authUser?.user_metadata ?? {};
+        const role = emp.role || metadata.role;
+        if (role === "Admin" || role === "CEO") return false;
+
+        const isMetaActive = metadata.status === "Active" || metadata.is_active === true || metadata.employment_status === "Active";
+        const isDbActive = emp.status === "Active" || emp.is_active === true || emp.employment_status === "Active";
+
+        const isMetaInactive = metadata.status === "Inactive" || metadata.is_active === false || metadata.employment_status === "Inactive";
+        const isDbInactive = emp.status === "Inactive" || emp.is_active === false || emp.employment_status === "Inactive";
+
+        let isInactive = false;
+        if (isMetaActive || isDbActive) {
+          isInactive = false;
+        } else if (isMetaInactive || isDbInactive) {
+          isInactive = true;
+        }
+
+        return !isInactive;
+      });
+
       const { data: att } = await supabase.from("attendance").select("user_auth_uid, status").eq("date", today);
       const { data: lv } = await supabase.from("leaves")
         .select("user_auth_uid, leave_type, start_date, end_date, employees!leaves_user_auth_uid_fkey(name, employee_id, email)")

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
-import { Users, Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Search, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useSettings } from "@/context/SettingsContext";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseAdmin } from "@/integrations/supabase/client.admin";
 import { Modal } from "@/components/hrms/Modal";
@@ -23,6 +24,10 @@ type Employee = {
   role: "Admin" | "Employee" | "CEO";
   status?: "Active" | "Inactive";
   is_active?: boolean;
+  gps_enabled?: boolean;
+  deactivated_at?: string | null;
+  deactivation_reason?: string | null;
+  reactivated_at?: string | null;
 
   date_of_birth?: string | null;
   bank_name?: string;
@@ -45,6 +50,8 @@ const EMPTY_FORM = {
   phone: "",
   role: "Employee" as "Admin" | "Employee" | "CEO",
   status: "Active" as "Active" | "Inactive",
+  gps_enabled: true,
+  deactivation_reason: "",
 
   date_of_birth: null as string | null,
   bank_name: "",
@@ -62,17 +69,25 @@ const getEmpStatus = (emp: Employee): "Active" | "Inactive" => {
 
 export function EmployeesPage() {
   const { profile } = useAuth();
+  const { settings } = useSettings();
+  const isGpsGloballyDisabled = settings.geo.enableGpsRestriction === false;
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("All");
   const [roleFilter, setRoleFilter] = useState("All");
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("Active"); // Default view: Active Employees
   const [showModal, setShowModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [editTarget, setEditTarget] = useState<Employee | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Deactivation confirmation modal state
+  const [deactivateTarget, setDeactivateTarget] = useState<Employee | null>(null);
+  const [deactivationReason, setDeactivationReason] = useState("");
+  const [deactivating, setDeactivating] = useState(false);
 
   const load = async () => {
     const { data: empData } = await supabase.from("employees").select("*").order("created_at", { ascending: true });
@@ -90,16 +105,30 @@ export function EmployeesPage() {
     const merged = (empData ?? []).map((emp: any) => {
       const authUser = emp.auth_uid ? authUsersMap.get(emp.auth_uid) : null;
       const metadata = authUser?.user_metadata ?? {};
-      const isBanned = !!(authUser?.banned_until && new Date(authUser.banned_until) > new Date());
 
-      const status: "Active" | "Inactive" =
-        metadata.status ?? (isBanned ? "Inactive" : (emp.status === "Inactive" || emp.is_active === false ? "Inactive" : "Active"));
-      const is_active = metadata.is_active ?? (status === "Active" && !isBanned);
+      const isMetaActive = metadata.status === "Active" || metadata.is_active === true || metadata.employment_status === "Active";
+      const isDbActive = emp.status === "Active" || emp.is_active === true || emp.employment_status === "Active";
+
+      const isMetaInactive = metadata.status === "Inactive" || metadata.is_active === false || metadata.employment_status === "Inactive";
+      const isDbInactive = emp.status === "Inactive" || emp.is_active === false || emp.employment_status === "Inactive";
+
+      let isInactive = false;
+      if (isMetaActive || isDbActive) {
+        isInactive = false;
+      } else if (isMetaInactive || isDbInactive) {
+        isInactive = true;
+      }
+
+      const status: "Active" | "Inactive" = isInactive ? "Inactive" : "Active";
+      const is_active = !isInactive;
+
+      const gps_enabled = metadata.gps_enabled ?? emp.gps_enabled ?? true;
 
       return {
         ...emp,
         status,
         is_active,
+        gps_enabled,
       };
     });
 
@@ -140,6 +169,8 @@ export function EmployeesPage() {
       phone: emp.phone,
       role: emp.role,
       status: getEmpStatus(emp),
+      gps_enabled: emp.gps_enabled ?? true,
+      deactivation_reason: emp.deactivation_reason ?? "",
 
       date_of_birth: emp.date_of_birth ?? null,
       bank_name: emp.bank_name ?? "",
@@ -152,14 +183,95 @@ export function EmployeesPage() {
     setShowModal(true);
   };
 
-  const toggleStatus = async (emp: Employee) => {
-    if (!emp.auth_uid) return;
+  const handleStatusClick = (emp: Employee) => {
     const currentStatus = getEmpStatus(emp);
-    const newStatus = currentStatus === "Active" ? "Inactive" : "Active";
+    if (currentStatus === "Active") {
+      setDeactivateTarget(emp);
+      setDeactivationReason("");
+    } else {
+      reactivateEmployee(emp);
+    }
+  };
 
-    // Optimistic UI update
+  const confirmDeactivate = async () => {
+    if (!deactivateTarget) return;
+    setDeactivating(true);
+    try {
+      await updateEmployee({
+        data: {
+          auth_uid: deactivateTarget.auth_uid || undefined,
+          employee_id: deactivateTarget.employee_id,
+          email: deactivateTarget.email || undefined,
+          name: deactivateTarget.name,
+          department: deactivateTarget.department,
+          designation: deactivateTarget.designation,
+          salary: deactivateTarget.salary,
+          phone: deactivateTarget.phone,
+          role: deactivateTarget.role,
+          status: "Inactive",
+          is_active: false,
+          deactivation_reason: deactivationReason || "Admin deactivation",
+        },
+      });
+      toast.success(`${deactivateTarget.name} has been deactivated.`);
+      setDeactivateTarget(null);
+      setEmployees((prev) =>
+        prev.map((item) =>
+          item.id === deactivateTarget.id || item.employee_id === deactivateTarget.employee_id
+            ? { ...item, status: "Inactive", is_active: false, employment_status: "Inactive" }
+            : item
+        )
+      );
+      await load();
+    } catch (err: any) {
+      toast.error(err.message ?? "Deactivation failed");
+    } finally {
+      setDeactivating(false);
+    }
+  };
+
+  const reactivateEmployee = async (emp: Employee) => {
+    if (!emp) return;
+    try {
+      await updateEmployee({
+        data: {
+          auth_uid: emp.auth_uid || undefined,
+          employee_id: emp.employee_id,
+          email: emp.email || undefined,
+          name: emp.name,
+          department: emp.department,
+          designation: emp.designation,
+          salary: emp.salary,
+          phone: emp.phone,
+          role: emp.role,
+          status: "Active",
+          is_active: true,
+        },
+      });
+      toast.success(`${emp.name} account reactivated.`);
+      setEmployees((prev) =>
+        prev.map((item) =>
+          item.id === emp.id || item.employee_id === emp.employee_id
+            ? { ...item, status: "Active", is_active: true, employment_status: "Active" }
+            : item
+        )
+      );
+      await load();
+    } catch (err: any) {
+      toast.error(err.message ?? "Reactivation failed");
+    }
+  };
+
+  const toggleGps = async (emp: Employee) => {
+    if (isGpsGloballyDisabled) {
+      toast.info("GPS Restriction is currently turned OFF in global Admin Settings. All employees can punch in without location.");
+      return;
+    }
+    if (!emp.auth_uid) return;
+    const newGpsState = emp.gps_enabled === false ? true : false;
+
     setEmployees((prev) =>
-      prev.map((e) => (e.id === emp.id ? { ...e, status: newStatus, is_active: newStatus === "Active" } : e))
+      prev.map((e) => (e.id === emp.id ? { ...e, gps_enabled: newGpsState } : e))
     );
 
     try {
@@ -172,14 +284,13 @@ export function EmployeesPage() {
           salary: emp.salary,
           phone: emp.phone,
           role: emp.role,
-          status: newStatus,
-          is_active: newStatus === "Active",
+          gps_enabled: newGpsState,
         },
       });
-      toast.success(`${emp.name} set to ${newStatus}`);
+      toast.success(`GPS Attendance for ${emp.name} set to ${newGpsState ? "Enabled" : "Disabled"}`);
       await load();
     } catch (err: any) {
-      toast.error(err.message ?? "Status update failed");
+      toast.error(err.message ?? "GPS update failed");
       await load();
     }
   };
@@ -199,6 +310,8 @@ export function EmployeesPage() {
             role: form.role,
             status: form.status,
             is_active: form.status === "Active",
+            gps_enabled: form.gps_enabled,
+            deactivation_reason: form.deactivation_reason || undefined,
             joiningDate: form.joiningDate || undefined,
             password: form.password || undefined,
 
@@ -227,6 +340,7 @@ export function EmployeesPage() {
             phone: form.phone,
             role: form.role,
             status: form.status,
+            gps_enabled: form.gps_enabled,
 
             date_of_birth: form.date_of_birth || undefined,
             pan_no: form.pan_no,
@@ -317,6 +431,7 @@ export function EmployeesPage() {
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Employee</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Department & Role</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Status</th>
+                <th className="text-left px-5 py-3 font-medium text-slate-500">GPS Attendance</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Phone</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Salary</th>
                 <th className="text-left px-5 py-3 font-medium text-slate-500">Date of Birth</th>
@@ -352,8 +467,8 @@ export function EmployeesPage() {
                   </td>
                   <td className="px-5 py-3">
                     <button
-                      onClick={() => toggleStatus(emp)}
-                      title="Click to toggle Active / Inactive status"
+                      onClick={() => handleStatusClick(emp)}
+                      title="Click to activate or deactivate employee"
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition cursor-pointer hover:scale-105 ${
                         getEmpStatus(emp) === "Active"
                           ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
@@ -361,7 +476,21 @@ export function EmployeesPage() {
                       }`}
                     >
                       <span className={`h-1.5 w-1.5 rounded-full ${getEmpStatus(emp) === "Active" ? "bg-emerald-500" : "bg-rose-500"}`} />
-                      {getEmpStatus(emp)}
+                      {getEmpStatus(emp) === "Active" ? "🟢 Active" : "🔴 Inactive"}
+                    </button>
+                  </td>
+                  <td className="px-5 py-3">
+                    <button
+                      onClick={() => toggleGps(emp)}
+                      title={isGpsGloballyDisabled ? "GPS is turned OFF globally in Admin Settings" : "Click to toggle GPS attendance requirement"}
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition cursor-pointer hover:scale-105 ${
+                        !isGpsGloballyDisabled && emp.gps_enabled !== false
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                          : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${!isGpsGloballyDisabled && emp.gps_enabled !== false ? "bg-emerald-500" : "bg-rose-500"}`} />
+                      {isGpsGloballyDisabled ? "GPS Disabled (Global OFF)" : emp.gps_enabled !== false ? "GPS Enabled" : "GPS Disabled"}
                     </button>
                   </td>
                   <td className="px-5 py-3 text-slate-600">{emp.phone || "—"}</td>
@@ -390,7 +519,7 @@ export function EmployeesPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="text-center py-12 text-slate-500">
+                  <td colSpan={14} className="text-center py-12 text-slate-500">
                     <Users className="h-10 w-10 mx-auto text-slate-300 mb-2" />
                     No employees found
                   </td>
@@ -405,16 +534,32 @@ export function EmployeesPage() {
       <Modal open={showModal} title={editTarget ? "Edit Employee" : "Add New Employee"} onClose={() => setShowModal(false)} maxWidth="max-w-2xl">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Employee ID" required>
-            <input disabled={!!editTarget} value={form.employee_id} onChange={(e) => setForm({ ...form, employee_id: e.target.value })} placeholder="TM001" className="input-field disabled:opacity-60" />
+            <input value={form.employee_id} onChange={(e) => setForm({ ...form, employee_id: e.target.value })} placeholder="TM001" className="input-field" />
           </Field>
           <Field label="Full Name" required>
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="John Doe" className="input-field" />
           </Field>
           <Field label="Email Address" required>
-            <input type="email" disabled={!!editTarget} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="john.doe@company.com" className="input-field disabled:opacity-60" />
+            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="john.doe@company.com" className="input-field" />
           </Field>
           <Field label="Password" required={!editTarget}>
-            <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editTarget ? "Leave blank to keep unchanged" : "Leave blank for default (ID@123)"} className="input-field" />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                placeholder={editTarget ? "Leave blank to keep unchanged" : "Leave blank for default (ID@123)"}
+                className="input-field pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                title={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </Field>
           <Field label="Department" required>
             <select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className="input-field">
@@ -453,6 +598,21 @@ export function EmployeesPage() {
             >
               <option value="Active">Active (Can Login & Access App)</option>
               <option value="Inactive">Inactive (Blocked from Login)</option>
+            </select>
+          </Field>
+
+          <Field label="GPS Attendance" required>
+            <select
+              value={form.gps_enabled ? "true" : "false"}
+              onChange={(e) => setForm({ ...form, gps_enabled: e.target.value === "true" })}
+              className={`input-field font-semibold ${
+                form.gps_enabled
+                  ? "border-emerald-300 text-emerald-700 bg-emerald-50/40"
+                  : "border-rose-300 text-rose-700 bg-rose-50/40"
+              }`}
+            >
+              <option value="true">ON (GPS verification required)</option>
+              <option value="false">OFF (GPS verification not required)</option>
             </select>
           </Field>
 
@@ -496,6 +656,38 @@ export function EmployeesPage() {
           <button onClick={handleDelete} disabled={deleting} className="px-5 py-2 rounded-xl bg-rose-600 text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 transition">
             {deleting ? "Deleting…" : "Delete Employee"}
           </button>
+        </div>
+      </Modal>
+
+      {/* Deactivation Confirmation Modal */}
+      <Modal open={!!deactivateTarget} title="Deactivate Employee Account" onClose={() => setDeactivateTarget(null)} maxWidth="max-w-md">
+        <div className="space-y-4">
+          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs leading-relaxed">
+            <strong>Warning:</strong> Deactivating <strong>{deactivateTarget?.name}</strong> ({deactivateTarget?.employee_id}) will immediately terminate active sessions, block login access, disable attendance, and exclude the employee from future payroll generation. Historical data will be preserved.
+          </div>
+
+          <Field label="Deactivation Reason (Optional)">
+            <textarea
+              rows={3}
+              value={deactivationReason}
+              onChange={(e) => setDeactivationReason(e.target.value)}
+              placeholder="e.g. Resigned, End of Contract, Prolonged Leave..."
+              className="w-full px-3 py-2 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 border-slate-200"
+            />
+          </Field>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <button onClick={() => setDeactivateTarget(null)} className="px-4 py-2 rounded-xl text-sm text-slate-600 hover:bg-slate-100 transition">
+              Cancel
+            </button>
+            <button
+              onClick={confirmDeactivate}
+              disabled={deactivating}
+              className="px-5 py-2 rounded-xl bg-rose-600 text-white text-sm font-medium hover:bg-rose-700 disabled:opacity-50 transition"
+            >
+              {deactivating ? "Deactivating..." : "Confirm Deactivation"}
+            </button>
+          </div>
         </div>
       </Modal>
     </div>

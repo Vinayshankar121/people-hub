@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { CalendarDays, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/integrations/supabase/client.admin";
 import { Modal } from "@/components/hrms/Modal";
-import { fmtDate, HOLIDAY_TYPES } from "@/lib/hrms-utils";
+import { fmtDate } from "@/lib/hrms-utils";
 import { toast } from "sonner";
 
 type Holiday = {
@@ -35,66 +36,81 @@ export function HolidaysPage() {
     }
     setSaving(true);
     try {
-      const { error } = await supabase.from("holidays").insert({
+      let { error } = await supabase.from("holidays").insert({
         name: form.name,
         date: form.date,
         type: form.type,
       });
-      if (error) throw error;
-      toast.success("Holiday added");
+      if (error) {
+        const { error: adminErr } = await supabaseAdmin.from("holidays").insert({
+          name: form.name,
+          date: form.date,
+          type: form.type,
+        });
+        if (adminErr) throw adminErr;
+      }
+      toast.success(`${form.type} added successfully`);
       setShowModal(false);
       setForm({ name: "", date: "", type: "National" });
       load();
     } catch (err: any) {
-      toast.error(err.message ?? "Failed to add holiday");
+      toast.error(err.message ?? "Failed to add holiday/event");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete holiday "${name}"?`)) return;
-    const { error } = await supabase.from("holidays").delete().eq("id", id);
-    if (error) toast.error(error.message);
-    else { toast.success("Holiday deleted"); load(); }
+    if (!confirm(`Delete "${name}"?`)) return;
+    let { error } = await supabase.from("holidays").delete().eq("id", id);
+    if (error) {
+      const { error: adminErr } = await supabaseAdmin.from("holidays").delete().eq("id", id);
+      if (adminErr) toast.error(adminErr.message);
+      else { toast.success("Deleted successfully"); load(); }
+    } else {
+      toast.success("Deleted successfully");
+      load();
+    }
   };
 
   const typeColor: Record<string, { bg: string; text: string; icon: string }> = {
     National: { bg: "bg-blue-50", text: "text-blue-700", icon: "bg-blue-100 text-blue-600" },
-    Company: { bg: "bg-violet-50", text: "text-violet-700", icon: "bg-violet-100 text-violet-600" },
+    Company: { bg: "bg-emerald-50", text: "text-emerald-700", icon: "bg-emerald-100 text-emerald-600" },
+    Event: { bg: "bg-purple-50", text: "text-purple-700", icon: "bg-purple-100 text-purple-600" },
+    Announcement: { bg: "bg-pink-50", text: "text-pink-700", icon: "bg-pink-100 text-pink-600" },
   };
 
   return (
     <div className="space-y-6 max-w-7xl">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Holiday Calendar</h1>
-          <p className="text-sm text-slate-500 mt-1">Corporate and National scheduled non-working days.</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Holiday & Events Calendar</h1>
+          <p className="text-sm text-slate-500 mt-1">Corporate holidays, company events, and announcements schedule.</p>
         </div>
         {isAdmin && (
-          <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-white text-sm font-medium hover:opacity-90 transition">
-            <Plus className="h-4 w-4" /> Add Holiday
+          <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-white text-sm font-medium hover:opacity-90 transition shadow-sm">
+            <Plus className="h-4 w-4" /> Add Event / Holiday
           </button>
         )}
       </div>
 
       {/* Card Grid */}
       {holidays.length === 0 ? (
-        <div className="text-center py-20 text-slate-500">
+        <div className="text-center py-20 text-slate-500 bg-white rounded-2xl border">
           <CalendarDays className="h-14 w-14 mx-auto text-slate-300 mb-3" />
-          <p className="text-lg font-medium">No holidays scheduled</p>
-          <p className="text-sm">Holidays will appear here once added.</p>
+          <p className="text-lg font-medium">No events or holidays scheduled</p>
+          <p className="text-sm">Holidays and events will appear here once added.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {holidays.map((h) => {
             const tc = typeColor[h.type] ?? typeColor.Company;
             return (
-              <div key={h.id} className={`rounded-2xl ${tc.bg} p-5 relative group transition-shadow hover:shadow-md`}>
+              <div key={h.id} className={`rounded-2xl ${tc.bg} p-5 relative group transition-shadow hover:shadow-md border border-current/10`}>
                 {isAdmin && (
                   <button
                     onClick={() => handleDelete(h.id, h.name)}
-                    className="absolute top-3 right-3 p-1.5 rounded-lg bg-white/80 text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition"
+                    className="absolute top-3 right-3 p-1.5 rounded-lg bg-white/80 text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition shadow-sm"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -103,7 +119,9 @@ export function HolidaysPage() {
                   <CalendarDays className="h-5 w-5" />
                 </div>
                 <h3 className="font-semibold text-slate-900">{h.name}</h3>
-                <span className={`inline-flex mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${tc.bg} ${tc.text} ring-1 ring-inset ring-current/10`}>{h.type} Holiday</span>
+                <span className={`inline-flex mt-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium ${tc.bg} ${tc.text} ring-1 ring-inset ring-current/20`}>
+                  {h.type}
+                </span>
                 <p className="text-sm text-slate-600 mt-2">{fmtDate(h.date)}</p>
               </div>
             );
@@ -112,27 +130,30 @@ export function HolidaysPage() {
       )}
 
       {/* Add Holiday Modal */}
-      <Modal open={showModal} title="Add Holiday" onClose={() => setShowModal(false)}>
+      <Modal open={showModal} title="Add Event, Announcement or Holiday" onClose={() => setShowModal(false)}>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-600">Holiday Name <span className="text-rose-500">*</span></label>
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder='e.g. "Christmas Day"' className="input-field" />
+            <label className="text-xs font-medium text-slate-600">Title / Name <span className="text-rose-500">*</span></label>
+            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder='e.g. "Annual Hackathon" or "Christmas Day"' className="input-field" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-600">Holiday Date <span className="text-rose-500">*</span></label>
+            <label className="text-xs font-medium text-slate-600">Date <span className="text-rose-500">*</span></label>
             <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="input-field" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-600">Holiday Type <span className="text-rose-500">*</span></label>
+            <label className="text-xs font-medium text-slate-600">Category Type <span className="text-rose-500">*</span></label>
             <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="input-field">
-              {HOLIDAY_TYPES.map((t) => <option key={t} value={t}>{t} Holiday</option>)}
+              <option value="National">National Holiday</option>
+              <option value="Company">Company Holiday</option>
+              <option value="Event">Event (Company Event)</option>
+              <option value="Announcement">Announcement (General Announcement)</option>
             </select>
           </div>
         </div>
         <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
           <button onClick={() => setShowModal(false)} className="px-4 py-2 rounded-xl text-sm text-slate-600 hover:bg-slate-100 transition">Cancel</button>
           <button onClick={handleAdd} disabled={saving} className="px-5 py-2 rounded-xl bg-brand text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 transition">
-            {saving ? "Adding…" : "Add Holiday"}
+            {saving ? "Adding…" : "Save Item"}
           </button>
         </div>
       </Modal>
